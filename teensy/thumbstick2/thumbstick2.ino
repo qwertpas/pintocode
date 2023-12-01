@@ -2,11 +2,10 @@
  * For Teensy 4.0
  * pins 0,1,2,3 are the digital input for the buttons in joysticks 3,2,1,0, pullups enabled
  * pins 7,8,9 are RX, TX, and DE/~RE the RS485 transceiver UART
- * pins 14,15 are TX3 and RX3 for transmitting the string with joystick data
  * pins 14-17 (A0-A3) are the analog inputs for the X and Y axes in joysticks 0,1
+ * pins 18,19 are SDA0 and SCL0 for transmitting joystick data to ESP8266
  * pins 20-23 (A6-A9) are the analog inputs for the X and Y axes in joysticks 2,3
  */
-
 
 
 #include "HX711.h"
@@ -47,7 +46,12 @@ void setup() {
   Serial.begin(115200); //UART for printing
   Serial2.begin(115200); // UART for RS485 output (RX2=pin7, TX2=pin8)
   Serial2.setTimeout(1);
-  Serial3.begin(115200); //UART for sending joystick data
+
+  pinMode(18, INPUT_PULLUP);
+  pinMode(19, INPUT_PULLUP);
+
+  Wire.begin(8); //join i2c bus with address #8
+  Wire.onRequest(requestEvent); //register event
   
   pinMode(LED_BUILTIN, OUTPUT);
   digitalWrite(LED_BUILTIN, LOW);
@@ -66,7 +70,7 @@ void setup() {
     sticks[i].y_init = -analogRead(stick_pins[i][1]);
   }
   
-  digitalWrite(LED_BUILTIN, HIGH);
+  digitalWrite(LED_BUILTIN, LOW);
 }
 
 
@@ -89,8 +93,7 @@ void loop() {
   }
 //  stick_str += "\t\n";
   
-  Serial.print(stick_str);
-  Serial3.print(stick_str);
+//  Serial.print(stick_str);
 
   servo.write(sticks[0].x);
 
@@ -124,6 +127,13 @@ void loop() {
 //    Serial.println(uart2_RX[i]);
 //  }
 //  Serial.print("\t\n");
+}
+
+
+void requestEvent() {
+  digitalWrite(LED_BUILTIN, HIGH);  // briefly flash the LED
+  Wire.write("hello ");     // respond with message of 6 bytes
+  digitalWrite(LED_BUILTIN, LOW);
 }
 
 

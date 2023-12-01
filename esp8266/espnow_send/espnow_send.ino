@@ -1,6 +1,8 @@
 #include <elapsedMillis.h>
 #include <ESP8266WiFi.h>
 #include <espnow.h>
+#include <Wire.h>
+
 
 typedef struct stick_struct {
   int16_t x;
@@ -32,6 +34,9 @@ void setup() {
   Serial.begin(115200);
   Serial1.begin(115200);
 
+  Wire.begin(4, 5, 0x42);  // join i2c bus (address optional for master)
+
+
   WiFi.mode(WIFI_STA);
 
   if(esp_now_init() == 0){
@@ -51,7 +56,14 @@ void loop() {
   if (led_timer > 200) {
     digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN)); // Toggle the LED state
     led_timer = 0;
-//    Serial.println("blink!");
+    Serial.println("blink!");
+    
+    Wire.requestFrom(0x08, 6);  // request 6 bytes from slave device #8
+    while (Wire.available()) {  // slave may send less than requested
+      char c = Wire.read();     // receive a byte as character
+      Serial.print("q");
+      Serial.print(c);          // print the character
+    }
   }
   
 //  if (printaddr_timer > 1000) {
@@ -59,19 +71,19 @@ void loop() {
 //    printaddr_timer = 0;
 //  }
 
-  if (send_timer > 10) {
+  if (send_timer > 1000) {
     esp_now_send(recv_addr, (uint8_t *) &sticks, sizeof(sticks));
     send_timer = 0;
   }
 
-  if (Serial1.available()) {
-    String receivedString = Serial1.readStringUntil('\n'); // Read a line terminated by '\n'
-    int index, x, y, b;
-    if (sscanf(receivedString.c_str(), "%d:%d,%d,%d", &index, &x, &y, &b) == 4) {
-      if (index >= 0 && index < 4) { // Ensure the index is within range
-        sticks[index].x = x;
-        sticks[index].y = y;
-        sticks[index].b = b;
+//  if (Serial.available()) {
+//    String receivedString = Serial1.readStringUntil('\n'); // Read a line terminated by '\n'
+//    int index, x, y, b;
+//    if (sscanf(receivedString.c_str(), "%d:%d,%d,%d", &index, &x, &y, &b) == 4) {
+//      if (index >= 0 && index < 4) { // Ensure the index is within range
+//        sticks[index].x = x;
+//        sticks[index].y = y;
+//        sticks[index].b = b;
         
         
 //        for(int i=0; i<4; i++){
@@ -85,7 +97,7 @@ void loop() {
 //            Serial.println(")");
 //        }
 //        Serial.println("\t\n");
-      }
-    }
-  }
+//      }
+//    }
+//  }
 }
