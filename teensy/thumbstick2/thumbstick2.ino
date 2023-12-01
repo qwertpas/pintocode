@@ -12,8 +12,9 @@
 #include "comdef.h"
 #include "util.h"
 
+#include <elapsedMillis.h>
 #include <PWMServo.h>
-#include <Wire.h>
+//#include <Wire.h>
 
 #define RS485_DE (9)
 #define MIN_INT8 (0x80) //most negative int8
@@ -46,12 +47,12 @@ void setup() {
   Serial.begin(115200); //UART for printing
   Serial2.begin(115200); // UART for RS485 output (RX2=pin7, TX2=pin8)
   Serial2.setTimeout(1);
+  Serial3.begin(115200); //UART for joystick data
 
-  pinMode(18, INPUT_PULLUP);
-  pinMode(19, INPUT_PULLUP);
-
-  Wire.begin(8); //join i2c bus with address #8
-  Wire.onRequest(requestEvent); //register event
+//  pinMode(18, INPUT_PULLUP);
+//  pinMode(19, INPUT_PULLUP);
+//  Wire.begin(8); //join i2c bus with address #8
+//  Wire.onRequest(requestEvent); //register event
   
   pinMode(LED_BUILTIN, OUTPUT);
   digitalWrite(LED_BUILTIN, LOW);
@@ -93,9 +94,16 @@ void loop() {
   }
 //  stick_str += "\t\n";
   
-//  Serial.print(stick_str);
+  Serial.print(stick_str);
 
+  digitalWrite(LED_BUILTIN, HIGH);
+  Serial3.print(stick_str);
+  digitalWrite(LED_BUILTIN, LOW);
+  
   servo.write(sticks[0].x);
+
+  delay(5);
+
 
 
 //  motor_cmd(5, CMD_SET_VOLTAGE, twoscomplement14(stick_x1), uart2_RX);
@@ -106,12 +114,12 @@ void loop() {
 //  Serial.println(ang5);
 //  Serial.print("cur5: ");
 //  Serial.println(cur5);
-  delayMicroseconds(1000);
+//  delayMicroseconds(2000);
   
-  motor_cmd(6, CMD_SET_VOLTAGE, twoscomplement14(sticks[0].x), uart2_RX);
-  motor_cmd(6, CMD_SET_CURRENT, twoscomplement14(200), uart2_RX);
-  int16_t ang6 = pad14(uart2_RX[0], uart2_RX[1]);
-  int16_t cur6 = pad14(uart2_RX[2], uart2_RX[3]);
+//  motor_cmd(6, CMD_SET_VOLTAGE, twoscomplement14(sticks[0].x), uart2_RX);
+//  motor_cmd(6, CMD_SET_CURRENT, twoscomplement14(200), uart2_RX);
+//  int16_t ang6 = pad14(uart2_RX[0], uart2_RX[1]);
+//  int16_t cur6 = pad14(uart2_RX[2], uart2_RX[3]);
 //  Serial.print("ang6: ");
 //  Serial.println(ang6);
 //  Serial.print("cur6: ");
@@ -119,7 +127,7 @@ void loop() {
 //  Serial.print("\t\n");
 
   
-  delayMicroseconds(1000);
+//  delayMicroseconds(1000);
 
   
 
@@ -130,11 +138,11 @@ void loop() {
 }
 
 
-void requestEvent() {
-  digitalWrite(LED_BUILTIN, HIGH);  // briefly flash the LED
-  Wire.write("hello ");     // respond with message of 6 bytes
-  digitalWrite(LED_BUILTIN, LOW);
-}
+//void requestEvent() {
+//  digitalWrite(LED_BUILTIN, HIGH);  // briefly flash the LED
+//  Wire.write("hello ");     // respond with message of 6 bytes
+//  digitalWrite(LED_BUILTIN, LOW);
+//}
 
 
 

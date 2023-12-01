@@ -2,31 +2,40 @@
 #include <Servo.h>
 #include <ESP8266WiFi.h>
 #include <espnow.h>
+#include "util.h"
 
 //my address is C8:C9:A3:56:98:6F
 
-typedef struct struct_message {
-  int b;
-  float c;
-} struct_message;
-struct_message data;
+typedef struct stick_struct {
+  int16_t x;
+  int16_t y;
+  uint8_t b;
+} stick_struct;
+stick_struct sticks[4] = {0};
 
-Servo servo16;
+typedef struct servo_struct {
+  Servo servo;
+  uint8_t pos; //0-180
+} servo_struct;
+servo_struct servos[6];
 
-elapsedMillis led_timer;
-elapsedMillis printaddr_timer;
-elapsedMillis servo_timer;
+uint8_t servo_pins[6] = {0, 16, 14, 12, 13, 15}; //D3, D0, D5, D6, D7, D8
+
 
 void OnDataRecv(uint8_t *mac, uint8_t *incomingData, uint8_t len) {
-  memcpy(&data, incomingData, sizeof(data));
-  Serial.print("Bytes received: ");
-  Serial.println(len);
-  Serial.print("b: ");
-  Serial.println(data.b);
-  Serial.print("c: ");
-  Serial.println(data.c);
-  
-  Serial.println();
+  memcpy(&sticks, incomingData, sizeof(sticks));
+
+//  for(int i=0; i<4; i++){
+//      Serial.print(i);
+//      Serial.print(": (");
+//      Serial.print(sticks[i].x); 
+//      Serial.print(", ");
+//      Serial.print(sticks[i].y); 
+//      Serial.print(", ");
+//      Serial.print(sticks[i].b); 
+//      Serial.println(")");
+//  }
+//  Serial.println("\t\n");
 }
  
 void setup() {
@@ -44,26 +53,35 @@ void setup() {
     Serial.println("Error initializing ESP-NOW");
   }
 
-  servo16.attach(16);
+  for(int i=0; i<6; i++){
+    servos[i].servo.attach(servo_pins[i], 500, 2400); //don't know why pwm range is 500-2400us
+  }
 
   pinMode(LED_BUILTIN, OUTPUT);
 }
 
+elapsedMillis led_timer;
+elapsedMillis servo_timer;
+
 void loop() {
-  if (led_timer > 2000) {
+  if (led_timer > 1000) {
     digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN)); // Toggle the LED state
     led_timer = 0;
-    Serial.println("blink!");
-  }
-  
-  if (printaddr_timer > 1000) {
-    Serial.println(WiFi.macAddress());
-    printaddr_timer = 0;
   }
 
-  if (servo_timer > 1800) {
-    Serial.println("servo move");
-    servo16.write(servo_timer/10);
+  if(servo_timer > 2){
+    servos[1].pos = (uint8_t) clip( (int16_t) (servos[1].pos + sticks[1].x/20.0), 0, 180);
+    for(int i=0; i<6; i++){
+        Serial.print(i);
+        Serial.print(": ");
+        Serial.println(servos[i].pos); 
+    }
+    Serial.println("\t\n");
+  
+    for(int i=0; i<6; i++){
+      servos[i].servo.write(servos[i].pos);
+    }
     servo_timer = 0;
   }
+
 }
