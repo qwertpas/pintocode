@@ -33,7 +33,6 @@ SoftwareSerial mySerial(4, 5); //RX, TX
 
 void setup() {
   Serial.begin(115200);
-  Serial1.begin(115200);
 
 //  Wire.begin(4, 5, 0x42);  // join i2c bus (address optional for master)
   mySerial.begin(115200);

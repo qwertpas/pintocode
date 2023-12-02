@@ -1,3 +1,5 @@
+#define MIN_INT8 (0x80) //most negative int8
+
 int16_t clip(int16_t x, int16_t min, int16_t max) {
   if (x > max) {
     return max;

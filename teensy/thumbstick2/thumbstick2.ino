@@ -74,36 +74,44 @@ void setup() {
   digitalWrite(LED_BUILTIN, LOW);
 }
 
+elapsedMillis stick_timer;
+elapsedMillis motor_timer;
 
 void loop() {
 
-  int16_t max_axis = 470;
-  int16_t deadband_axis = 20;
 
-  String stick_str = "";
+  if(stick_timer > 10){
+    int16_t max_axis = 470;
+    int16_t deadband_axis = 20;
+  
+    String stick_str = "";
+  
+    for(int i=0; i<4; i++){
+      sticks[i].x = deadband(clip(-analogRead(stick_pins[i][0]) - sticks[i].x_init, -max_axis, max_axis), deadband_axis);
+      sticks[i].x = map(sticks[i].x, -max_axis+deadband_axis, max_axis-deadband_axis, -511, 511);
+      sticks[i].y = deadband(clip(-analogRead(stick_pins[i][1]) - sticks[i].y_init, -max_axis, max_axis), deadband_axis);
+      sticks[i].y = map(sticks[i].y, -max_axis+deadband_axis, max_axis-deadband_axis, -511, 511);
+      sticks[i].b = !digitalRead(stick_pins[i][2]);
+  
+      stick_str += String(i) + ":" + String(sticks[i].x) + "," + String(sticks[i].y) + "," + String(sticks[i].b) + "\n";
+    }    
+    Serial.print(stick_str);
+    digitalWrite(LED_BUILTIN, HIGH);
+    Serial3.print(stick_str);
+    digitalWrite(LED_BUILTIN, LOW);
 
-  for(int i=0; i<4; i++){
-    sticks[i].x = deadband(clip(-analogRead(stick_pins[i][0]) - sticks[i].x_init, -max_axis, max_axis), deadband_axis);
-    sticks[i].x = map(sticks[i].x, -max_axis+deadband_axis, max_axis-deadband_axis, -511, 511);
-    sticks[i].y = deadband(clip(-analogRead(stick_pins[i][1]) - sticks[i].y_init, -max_axis, max_axis), deadband_axis);
-    sticks[i].y = map(sticks[i].y, -max_axis+deadband_axis, max_axis-deadband_axis, -511, 511);
-    sticks[i].b = !digitalRead(stick_pins[i][2]);
-
-    stick_str += String(i) + ":" + String(sticks[i].x) + "," + String(sticks[i].y) + "," + String(sticks[i].b) + "\n";
-    
+    stick_timer = 0;
   }
-//  stick_str += "\t\n";
-  
-  Serial.print(stick_str);
 
-  digitalWrite(LED_BUILTIN, HIGH);
-  Serial3.print(stick_str);
-  digitalWrite(LED_BUILTIN, LOW);
-  
-  servo.write(sticks[0].x);
-
-  delay(5);
-
+  if(motor_timer > 2){
+    motor_cmd(3, CMD_SET_VOLTAGE, twoscomplement14(sticks[0].x/4), uart2_RX);
+//    motor_cmd(3, CMD_GET_POSITION, 0, uart2_RX);
+    motor_timer = 0;
+  }
+//  if(motor_timer > 15){
+//    motor_cmd(8, CMD_SET_VOLTAGE, twoscomplement14(sticks[0].y), uart2_RX);
+//    motor_timer = 0;
+//  }
 
 
 //  motor_cmd(5, CMD_SET_VOLTAGE, twoscomplement14(stick_x1), uart2_RX);
