@@ -82,8 +82,11 @@ void loop() {
     led_timer = 0;
   }
 
-  if(motor_timer > 2){
+  if(motor_timer > 1 && motor_timer < 10){
     motor_cmd(3, CMD_SET_VOLTAGE, twoscomplement14(sticks[0].x/4), uart_RX);
+    motor_timer = 10;
+  }else if(motor_timer > 11){
+    motor_cmd(7, CMD_SET_VOLTAGE, twoscomplement14(sticks[0].y/4), uart_RX);
     motor_timer = 0;
   }
 
