@@ -10,13 +10,6 @@
 
 //my address is C8:C9:A3:56:98:6F
 
-//typedef struct stick_struct {
-//  int16_t x;
-//  int16_t y;
-//  uint8_t b;
-//} stick_struct;
-//stick_struct sticks[4] = {0};
-
 typedef struct cmd_struct {
   uint8_t servos[6];
   int16_t motors[2];
@@ -34,7 +27,19 @@ uint8_t servo_pins[6] = {0, 16, 14, 12, 13, 15}; //D3, D0, D5, D6, D7, D8
 //uint8_t uart_RX[10] = {0}; //response Ø32 from RS485
 
 void OnDataRecv(uint8_t *mac, uint8_t *incomingData, uint8_t len) {
-  memcpy(&cmd, incomingData, sizeof(cmd));
+  String receivedString = String((char *)incomingData);
+
+  char motor_type;
+  int index, val;
+  if (sscanf(receivedString.c_str(), "%c%d:%d", &motor_type, &index, &val) == 3) {
+    if(motor_type == 's' && index < 6){
+      cmd.servos[index] = val;
+    }
+    if(motor_type == 'm' && index < 2){
+      cmd.motors[index] = val;
+    }
+  }
+
 }
  
 void setup() {
@@ -59,27 +64,29 @@ void setup() {
 
 }
 
-elapsedMillis led_timer;
-elapsedMillis servo_timer;
+
+elapsedMillis print_timer;
 elapsedMillis motor_timer;
+elapsedMillis servo_timer;
 
 int motor_period = 5;
 
 void loop() {
-  if (led_timer > 1000) {
-//    digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN)); // Toggle the LED state
-    Serial.println("blicnk");
-    led_timer = 0;
+
+  if(print_timer > 100){
+    for(int i=0; i<6; i++) Serial.println(cmd.servos[i]);
+    for(int i=0; i<2; i++) Serial.println(cmd.motors[i]);
+    Serial.print("\t\n");
   }
 
-  if(motor_timer > motor_period && motor_timer < 100){
-    send_motor_cmd(7, CMD_SET_VOLTAGE, twoscomplement14(cmd.motors[0]));
-    motor_timer = 100;
-    
-  }else if(motor_timer > 100+motor_period){
-    send_motor_cmd(8, CMD_SET_VOLTAGE, twoscomplement14(cmd.motors[1]));
-    motor_timer = 0;
-  }
+//  if(motor_timer > motor_period && motor_timer < 100){
+//    send_motor_cmd(7, CMD_SET_VOLTAGE, twoscomplement14(cmd.motors[0]));
+//    motor_timer = 100;
+//    
+//  }else if(motor_timer > 100+motor_period){
+//    send_motor_cmd(8, CMD_SET_VOLTAGE, twoscomplement14(cmd.motors[1]));
+//    motor_timer = 0;
+//  }
 
 //  if(servo_timer > 1){
 //    servos[1].pos = (uint8_t) clip( (int16_t) (servos[1].pos + sticks[1].x/20.0), 0, 180);

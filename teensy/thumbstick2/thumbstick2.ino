@@ -39,6 +39,12 @@ typedef struct stick_struct {
 } stick_struct; //10 bytes each
 stick_struct sticks[4] = {0}; //40 bytes
 
+typedef struct cmd_struct {
+  uint8_t servos[6];
+  int16_t motors[2];
+} cmd_struct;
+cmd_struct cmd = {0};
+
 typedef struct motor_struct {
   int16_t I_phase;
   int16_t duty;
@@ -123,57 +129,66 @@ void loop() {
   if(stick_timer > 10){
     int16_t max_axis = 470;
     int16_t deadband_axis = 20;
-  
-    String stick_str = "";
-  
+    
     for(int i=0; i<4; i++){
       sticks[i].x = deadband(clip(-analogRead(stick_pins[i][0]) - sticks[i].x_init, -max_axis, max_axis), deadband_axis);
       sticks[i].x = map(sticks[i].x, -max_axis+deadband_axis, max_axis-deadband_axis, -511, 511);
       sticks[i].y = deadband(clip(-analogRead(stick_pins[i][1]) - sticks[i].y_init, -max_axis, max_axis), deadband_axis);
       sticks[i].y = map(sticks[i].y, -max_axis+deadband_axis, max_axis-deadband_axis, -511, 511);
       sticks[i].b = !digitalRead(stick_pins[i][2]);
-  
-      stick_str += String(i) + ":" + String(sticks[i].x) + "," + String(sticks[i].y) + "," + String(sticks[i].b) + "\n";
-    }    
-//    Serial.print(stick_str);
+//      stick_str += String(i) + ":" + String(sticks[i].x) + "," + String(sticks[i].y) + "," + String(sticks[i].b) + "\n";
+    }  
+
+    cmd.motors[0] = sticks[0].x / 4;
+    cmd.motors[1] = sticks[0].y / 4;
+    
+    cmd.servos[0] = sticks[1].x / 2;
+    cmd.servos[1] = sticks[1].y / 2;
+
+    String cmd_str = "";
+    for(int i=0; i<6; i++){
+      cmd_str += "s" + String(i) + ":" + cmd.servos[i] + "\n";
+    }
+    for(int i=0; i<2; i++){
+      cmd_str += "m" + String(i) + ":" + cmd.motors[i] + "\n";
+    }
+
     digitalWrite(LED_BUILTIN, HIGH);
-    Serial3.print(stick_str);
+    Serial3.print(cmd_str);
+    Serial.print(cmd_str);
+    Serial.print("\t\n");
     digitalWrite(LED_BUILTIN, LOW);
 
     stick_timer = 0;
   }
 
   if(motor_timer > motor_period && motor_timer < 100){
-    motor_cmd(3, CMD_SET_VOLTAGE, twoscomplement14(sticks[0].x), &motor_data[0]);
-//    delayMicroseconds(1000);
-//    motor_cmd(3, CMD_SET_CURRENT, twoscomplement14(40), &motor_data[0]);
+    motor_cmd(7, CMD_SET_VOLTAGE, twoscomplement14(sticks[0].x), &motor_data[0]);
     motor_timer = 100;
     
   }else if(motor_timer > 100+motor_period){
-//    motor_cmd(3, CMD_SET_CURRENT, twoscomplement14(40), &motor_data[0]);
-
-    motor_cmd(7, CMD_SET_VOLTAGE, twoscomplement14(sticks[0].y), &motor_data[1]);
+    motor_cmd(8, CMD_SET_VOLTAGE, twoscomplement14(sticks[0].y), &motor_data[1]);
     motor_timer = 0;
   }
 
-  if(print_timer > 10){
-    for(int i=0; i < 1; i++){
-      Serial.print("motor");
-      Serial.print(i);
-      Serial.print("Iphase: ");
-      Serial.println(motor_data[i].I_phase);
-      Serial.print("motor");
-      Serial.print(i);
-      Serial.print("duty: ");
-      Serial.println(motor_data[i].duty);
-      Serial.print("motor");
-      Serial.print(i);
-      Serial.print("duty_offset: ");
-      Serial.println(motor_data[i].duty_offsetted);
-    }
-    Serial.println("\t\n");
-
-    print_timer = 0;
-  }
+//  if(print_timer > 10){
+//    for(int i=0; i < 1; i++){
+//      Serial.print("motor");
+//      Serial.print(i);
+//      Serial.print("Iphase: ");
+//      Serial.println(motor_data[i].I_phase);
+//      Serial.print("motor");
+//      Serial.print(i);
+//      Serial.print("duty: ");
+//      Serial.println(motor_data[i].duty);
+//      Serial.print("motor");
+//      Serial.print(i);
+//      Serial.print("duty_offset: ");
+//      Serial.println(motor_data[i].duty_offsetted);
+//    }
+//    Serial.println("\t\n");
+//
+//    print_timer = 0;
+//  }
 
 }
