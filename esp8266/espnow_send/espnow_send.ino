@@ -3,14 +3,20 @@
 #include <espnow.h>
 #include <SoftwareSerial.h>
 
-typedef struct stick_struct {
-  int16_t x;
-  int16_t y;
-  uint8_t b;
-} stick_struct;
-stick_struct sticks[4] = {0};
+//typedef struct stick_struct {
+//  int16_t x;
+//  int16_t y;
+//  uint8_t b;
+//} stick_struct;
+//stick_struct sticks[4] = {0};
 
-uint8_t recv_addr[] = {0xC8, 0xC9, 0xA3, 0x56, 0x98, 0x6F};
+typedef struct cmd_struct {
+  uint8_t servos[6];
+  int16_t motors[2];
+} cmd_struct;
+cmd_struct cmd = {0};
+
+uint8_t recv_addr[] = {0xC8, 0xC9, 0xA3, 0x56, 0x98, 0x6F}; //other side
 
 elapsedMillis led_timer;
 elapsedMillis printaddr_timer;
@@ -65,34 +71,31 @@ void loop() {
 //  }
 
   if (send_timer > 10) {
-    esp_now_send(recv_addr, (uint8_t *) &sticks, sizeof(sticks));
+    esp_now_send(recv_addr, (uint8_t *) &cmd, sizeof(cmd));
     send_timer = 0;
+
+    for(int i = 0; i < 6; i++){
+      Serial.println(cmd.servos[0]);
+    }
+    for(int i = 0; i < 2; i++){
+      Serial.println(cmd.motors[1]);
+    }
   }
 
   if (mySerial.available()) {
     ESP.wdtDisable();
     String receivedString = mySerial.readStringUntil('\n'); // Read a line terminated by '\n'
-    int index, x, y, b;
-    if (sscanf(receivedString.c_str(), "%d:%d,%d,%d", &index, &x, &y, &b) == 4) {
-      if (index >= 0 && index < 4) { // Ensure the index is within range
-        sticks[index].x = x;
-        sticks[index].y = y;
-        sticks[index].b = b;
-        digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN)); // Toggle the LED state
-        
-        
-//        for(int i=0; i<4; i++){
-//            Serial.print(i);
-//            Serial.print(": (");
-//            Serial.print(sticks[i].x); 
-//            Serial.print(", ");
-//            Serial.print(sticks[i].y); 
-//            Serial.print(", ");
-//            Serial.print(sticks[i].b); 
-//            Serial.println(")");
-//        }
-//        Serial.println("\t\n");
+    char motor_type;
+    int index, val;
+    if (sscanf(receivedString.c_str(), "%c%d:%d", &motor_type, &index, &val) == 3) {
+      if(motor_type == 's' && index < 6){
+        cmd.servos[index] = val;
       }
+      if(motor_type == 'm' && index < 2){
+        cmd.motors[index] = val;
+      }
+      
+      digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN)); // Toggle the LED state
     }
     ESP.wdtEnable(1);
   }

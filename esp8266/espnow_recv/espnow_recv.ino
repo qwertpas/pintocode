@@ -10,12 +10,18 @@
 
 //my address is C8:C9:A3:56:98:6F
 
-typedef struct stick_struct {
-  int16_t x;
-  int16_t y;
-  uint8_t b;
-} stick_struct;
-stick_struct sticks[4] = {0};
+//typedef struct stick_struct {
+//  int16_t x;
+//  int16_t y;
+//  uint8_t b;
+//} stick_struct;
+//stick_struct sticks[4] = {0};
+
+typedef struct cmd_struct {
+  uint8_t servos[6];
+  int16_t motors[2];
+} cmd_struct;
+cmd_struct cmd = {0};
 
 typedef struct servo_struct {
   Servo servo;
@@ -25,47 +31,29 @@ servo_struct servos[6];
 
 uint8_t servo_pins[6] = {0, 16, 14, 12, 13, 15}; //D3, D0, D5, D6, D7, D8
 
-uint8_t uart_RX[10] = {0}; //response Ø32 from RS485
+//uint8_t uart_RX[10] = {0}; //response Ø32 from RS485
 
 void OnDataRecv(uint8_t *mac, uint8_t *incomingData, uint8_t len) {
-  memcpy(&sticks, incomingData, sizeof(sticks));
-
-//  for(int i=0; i<4; i++){
-//      Serial.print(i);
-//      Serial.print(": (");
-//      Serial.print(sticks[i].x); 
-//      Serial.print(", ");
-//      Serial.print(sticks[i].y); 
-//      Serial.print(", ");
-//      Serial.print(sticks[i].b); 
-//      Serial.println(")");
-//  }
-//  Serial.println("\t\n");
+  memcpy(&cmd, incomingData, sizeof(cmd));
 }
  
 void setup() {
-  // Initialize Serial Monitor
   Serial.begin(115200);
-  
-  // Set device as a Wi-Fi Station
+  Serial1.begin(115200); //RS485
+  Serial1.setTimeout(1);
+
   WiFi.mode(WIFI_STA);
 
-  // Init ESP-NOW
   if (esp_now_init() == 0) {
     esp_now_set_self_role(ESP_NOW_ROLE_SLAVE);
     esp_now_register_recv_cb(OnDataRecv);
-  }else{
-//    Serial.println("Error initializing ESP-NOW");
   }
-
-  Serial.begin(115200); // UART for RS485 output (RX2=pin7, TX2=pin8)
-  Serial.setTimeout(1);
 
   for(int i=0; i<6; i++){
     servos[i].servo.attach(servo_pins[i], 500, 2400); //don't know why pwm range is 500-2400us
   }
 
-  pinMode(LED_BUILTIN, OUTPUT);
+//  pinMode(LED_BUILTIN, OUTPUT);
   pinMode(RS485_DE, OUTPUT);
   pinMode(RS485_RE, OUTPUT);
 
@@ -75,18 +63,21 @@ elapsedMillis led_timer;
 elapsedMillis servo_timer;
 elapsedMillis motor_timer;
 
+int motor_period = 5;
 
 void loop() {
   if (led_timer > 1000) {
-    digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN)); // Toggle the LED state
+//    digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN)); // Toggle the LED state
+    Serial.println("blicnk");
     led_timer = 0;
   }
 
-  if(motor_timer > 1 && motor_timer < 10){
-    motor_cmd(3, CMD_SET_VOLTAGE, twoscomplement14(sticks[0].x/4), uart_RX);
-    motor_timer = 10;
-  }else if(motor_timer > 11){
-    motor_cmd(7, CMD_SET_VOLTAGE, twoscomplement14(sticks[0].y/4), uart_RX);
+  if(motor_timer > motor_period && motor_timer < 100){
+    send_motor_cmd(7, CMD_SET_VOLTAGE, twoscomplement14(cmd.motors[0]));
+    motor_timer = 100;
+    
+  }else if(motor_timer > 100+motor_period){
+    send_motor_cmd(8, CMD_SET_VOLTAGE, twoscomplement14(cmd.motors[1]));
     motor_timer = 0;
   }
 
@@ -108,8 +99,8 @@ void loop() {
 }
 
 
-uint8_t motor_cmd(uint8_t addr, uint8_t CMD_TYPE, uint16_t data, uint8_t *rx){
-  while(Serial.available()) Serial.read(); //clear rx buffer
+uint8_t send_motor_cmd(uint8_t addr, uint8_t CMD_TYPE, uint16_t data){
+//  while(Serial1.available()) Serial1.read(); //clear rx buffer
 
   uint8_t uart2_TX[3] = {0}; //command RS485 to Ø32
   uart2_TX[0] = CMD_TYPE | addr;
@@ -118,10 +109,11 @@ uint8_t motor_cmd(uint8_t addr, uint8_t CMD_TYPE, uint16_t data, uint8_t *rx){
 
   digitalWrite(RS485_DE, HIGH);
   digitalWrite(RS485_RE, HIGH);
-  Serial.write(uart2_TX, 3);
-  Serial.flush();
+  Serial1.write(uart2_TX, 3);
+  Serial1.flush();
   digitalWrite(RS485_DE, LOW);
   digitalWrite(RS485_RE, LOW);
-  int numread = Serial.readBytesUntil(MIN_INT8, rx, 10);
-  return numread; 
+//  int numread = Serial1.readBytesUntil(MIN_INT8, rx, 10);
+//  return numread; 
+  return 1;
 }

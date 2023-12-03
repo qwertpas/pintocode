@@ -18,6 +18,7 @@
 
 #define RS485_DE (9)
 #define MIN_INT8 (0x80) //most negative int8
+#define UART_SIZE 10
 
 #define ang_per_ct (90/4096.0)
 
@@ -38,10 +39,45 @@ typedef struct stick_struct {
 } stick_struct; //10 bytes each
 stick_struct sticks[4] = {0}; //40 bytes
 
-uint8_t uart2_RX[10] = {0}; //response Ø32 from RS485
-
+typedef struct motor_struct {
+  int16_t I_phase;
+  int16_t duty;
+  int16_t duty_offsetted;
+} motor_struct;
+motor_struct motor_data[2] = {0};
 
 PWMServo servo;  // create servo object to control a servo
+
+uint8_t motor_cmd(uint8_t addr, uint8_t CMD_TYPE, uint16_t data, motor_struct *motor_response){
+  while(Serial2.available()) Serial2.read(); //clear rx buffer
+
+  uint8_t uart2_TX[3] = {0}; //command RS485 to Ø32
+  uart2_TX[0] = CMD_TYPE | addr;
+  uart2_TX[1] = (data >> 7) & 0b01111111;
+  uart2_TX[2] = (data)      & 0b01111111;
+
+  digitalWrite(RS485_DE, HIGH);
+  Serial2.write(uart2_TX, 3);
+  Serial2.flush();
+  digitalWrite(RS485_DE, LOW);
+  uint8_t temp_rx[UART_SIZE];
+  int numread = Serial2.readBytesUntil(MIN_INT8, temp_rx, UART_SIZE);
+  if(numread == 0) return 0;
+  uint8_t checksum = 0;
+  for(int i=0; i<numread-1; i++){
+      checksum += temp_rx[i];
+  }
+  checksum &= 0b01111111;
+  if(checksum != temp_rx[numread-1]) return 0;
+
+  if(pad14(temp_rx[2], temp_rx[3]) > 1200) return 0;
+  
+//  memcpy(rx, temp_rx, numread);
+  motor_response->I_phase = pad14(temp_rx[0], temp_rx[1]);
+  motor_response->duty = pad14(temp_rx[2], temp_rx[3]);
+  motor_response->duty_offsetted = pad14(temp_rx[4], temp_rx[5]);
+  return 1; //success
+}
 
 void setup() {
   Serial.begin(115200); //UART for printing
@@ -76,6 +112,10 @@ void setup() {
 
 elapsedMillis stick_timer;
 elapsedMillis motor_timer;
+elapsedMillis print_timer;
+
+int motor_period = 5;
+
 
 void loop() {
 
@@ -95,7 +135,7 @@ void loop() {
   
       stick_str += String(i) + ":" + String(sticks[i].x) + "," + String(sticks[i].y) + "," + String(sticks[i].b) + "\n";
     }    
-    Serial.print(stick_str);
+//    Serial.print(stick_str);
     digitalWrite(LED_BUILTIN, HIGH);
     Serial3.print(stick_str);
     digitalWrite(LED_BUILTIN, LOW);
@@ -103,69 +143,37 @@ void loop() {
     stick_timer = 0;
   }
 
-  if(motor_timer > 2){
-    motor_cmd(3, CMD_SET_VOLTAGE, twoscomplement14(sticks[0].x/4), uart2_RX);
-//    motor_cmd(3, CMD_GET_POSITION, 0, uart2_RX);
+  if(motor_timer > motor_period && motor_timer < 100){
+    motor_cmd(3, CMD_SET_VOLTAGE, twoscomplement14(sticks[0].x), &motor_data[0]);
+//    delayMicroseconds(1000);
+//    motor_cmd(3, CMD_SET_CURRENT, twoscomplement14(40), &motor_data[0]);
+    motor_timer = 100;
+    
+  }else if(motor_timer > 100+motor_period){
+//    motor_cmd(3, CMD_SET_CURRENT, twoscomplement14(40), &motor_data[0]);
+
+    motor_cmd(7, CMD_SET_VOLTAGE, twoscomplement14(sticks[0].y), &motor_data[1]);
     motor_timer = 0;
   }
-//  if(motor_timer > 15){
-//    motor_cmd(8, CMD_SET_VOLTAGE, twoscomplement14(sticks[0].y), uart2_RX);
-//    motor_timer = 0;
-//  }
 
+  if(print_timer > 10){
+    for(int i=0; i < 1; i++){
+      Serial.print("motor");
+      Serial.print(i);
+      Serial.print("Iphase: ");
+      Serial.println(motor_data[i].I_phase);
+      Serial.print("motor");
+      Serial.print(i);
+      Serial.print("duty: ");
+      Serial.println(motor_data[i].duty);
+      Serial.print("motor");
+      Serial.print(i);
+      Serial.print("duty_offset: ");
+      Serial.println(motor_data[i].duty_offsetted);
+    }
+    Serial.println("\t\n");
 
-//  motor_cmd(5, CMD_SET_VOLTAGE, twoscomplement14(stick_x1), uart2_RX);
-//  motor_cmd(5, CMD_SET_CURRENT, 100, uart2_RX);
-//  int16_t ang5 = pad14(uart2_RX[0], uart2_RX[1]);
-//  int16_t cur5 = pad14(uart2_RX[2], uart2_RX[3]);
-//  Serial.print("ang5: ");
-//  Serial.println(ang5);
-//  Serial.print("cur5: ");
-//  Serial.println(cur5);
-//  delayMicroseconds(2000);
-  
-//  motor_cmd(6, CMD_SET_VOLTAGE, twoscomplement14(sticks[0].x), uart2_RX);
-//  motor_cmd(6, CMD_SET_CURRENT, twoscomplement14(200), uart2_RX);
-//  int16_t ang6 = pad14(uart2_RX[0], uart2_RX[1]);
-//  int16_t cur6 = pad14(uart2_RX[2], uart2_RX[3]);
-//  Serial.print("ang6: ");
-//  Serial.println(ang6);
-//  Serial.print("cur6: ");
-//  Serial.println(cur6);
-//  Serial.print("\t\n");
+    print_timer = 0;
+  }
 
-  
-//  delayMicroseconds(1000);
-
-  
-
-//  for(int i = 0; i< sizeof(uart2_RX); i++){
-//    Serial.println(uart2_RX[i]);
-//  }
-//  Serial.print("\t\n");
-}
-
-
-//void requestEvent() {
-//  digitalWrite(LED_BUILTIN, HIGH);  // briefly flash the LED
-//  Wire.write("hello ");     // respond with message of 6 bytes
-//  digitalWrite(LED_BUILTIN, LOW);
-//}
-
-
-
-uint8_t motor_cmd(uint8_t addr, uint8_t CMD_TYPE, uint16_t data, uint8_t *rx){
-  while(Serial2.available()) Serial2.read(); //clear rx buffer
-
-  uint8_t uart2_TX[3] = {0}; //command RS485 to Ø32
-  uart2_TX[0] = CMD_TYPE | addr;
-  uart2_TX[1] = (data >> 7) & 0b01111111;
-  uart2_TX[2] = (data)      & 0b01111111;
-
-  digitalWrite(RS485_DE, HIGH);
-  Serial2.write(uart2_TX, 3);
-  Serial2.flush();
-  digitalWrite(RS485_DE, LOW);
-  int numread = Serial2.readBytesUntil(MIN_INT8, rx, 10);
-  return numread; 
 }
