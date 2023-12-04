@@ -139,11 +139,20 @@ void loop() {
 //      stick_str += String(i) + ":" + String(sticks[i].x) + "," + String(sticks[i].y) + "," + String(sticks[i].b) + "\n";
     }  
 
-    cmd.motors[0] = sticks[0].x / 4;
-    cmd.motors[1] = sticks[0].y / 4;
-    
-    cmd.servos[0] = sticks[1].x / 2;
-    cmd.servos[1] = sticks[1].y / 2;
+    //    servos[1] = (uint8_t) clip( (int16_t) (servos[1].pos + sticks[1].x/20.0), 0, 180);
+
+
+    cmd.servos[0] = sticks[0].x / 4;
+    cmd.servos[1] = sticks[0].y / 4;
+
+    cmd.servos[2] = sticks[1].x / 4;
+    cmd.servos[3] = sticks[1].y / 4;
+
+    cmd.servos[4] = sticks[2].x / 4;
+    cmd.servos[5] = sticks[2].y / 4;
+
+    cmd.motors[0] = sticks[3].x / 4;
+    cmd.motors[1] = sticks[3].y / 4;
 
     String cmd_str = "";
     for(int i=0; i<6; i++){
