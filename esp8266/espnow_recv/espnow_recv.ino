@@ -4,15 +4,13 @@
 #include "util.h"
 #include "comdef.h"
 
-
-#define RS485_DE 5
-#define RS485_RE 4
-
-#define HW_TIMER_INTERVAL_US      20L
-#define USING_MICROS_RESOLUTION       true    //false
+#define HW_TIMER_INTERVAL_US      20L         // most other numbers make it crash
+#define USING_MICROS_RESOLUTION       true
 #define USING_TIM_DIV1                true              // for shortest and most accurate timer
 #include "ESP8266_PWM.h"
 
+#define RS485_DE 5
+#define RS485_RE 4
 
 //my address is C8:C9:A3:56:98:6F
 
@@ -22,7 +20,6 @@ typedef struct cmd_struct {
 } cmd_struct;
 cmd_struct cmd = {0};
 
-uint8_t servo_pos[6] = {90, 90, 90, 90, 90, 90};
 uint8_t servo_pins[6] = {0, 16, 14, 12, 13, 15}; //D3, D0, D5, D6, D7, D8
 uint8_t servo_channels[6];
 
@@ -34,7 +31,7 @@ void IRAM_ATTR TimerHandler(){
 }
  
 void setup() {
-  Serial.begin(115200);
+  Serial.begin(115200); //serial monitor print
   Serial1.begin(115200); //RS485
   Serial1.setTimeout(1);
 
@@ -45,24 +42,21 @@ void setup() {
     esp_now_register_recv_cb(OnDataRecv);
   }
 
+  ITimer.attachInterruptInterval(HW_TIMER_INTERVAL_US, TimerHandler); //for the servo pwm
+
   for(int i=0; i<6; i++){
     pinMode(servo_pins[i], OUTPUT);
-//    servos[i].servo.attach(servo_pins[i], 500, 2400); //don't know why pwm range is 500-2400us
-      servo_channels[i] = ISR_PWM.setPWM(servo_pins[i], 50, 0); 
+    cmd.servos[i] = 90;
+    servo_channels[i] = ISR_PWM.setPWM(servo_pins[i], 50, 0);
   }
-  analogWriteRange(1023);
-  analogWriteFreq(100);
+  for(int i=0; i<2; i++){
+    cmd.motors[i] = 0;
+  }
 
-//  pinMode(LED_BUILTIN, OUTPUT);
   pinMode(RS485_DE, OUTPUT);
   pinMode(RS485_RE, OUTPUT);
 
   pinMode(3, OUTPUT); //for debug since Serial TX0 is being used for RS485 
-
-
-  ITimer.attachInterruptInterval(HW_TIMER_INTERVAL_US, TimerHandler);
-
-
 }
 
 elapsedMillis print_timer;
@@ -70,41 +64,33 @@ elapsedMillis motor_timer;
 elapsedMillis servo_timer;
 
 int motor_period = 5;
-
-
-float count = 0;
+int servo_period = 5;
 
 void loop() {
 
-  
-
   if(print_timer > 100){
-//    for(int i=0; i<6; i++) Serial.println(cmd.servos[i]);
-//    for(int i=0; i<2; i++) Serial.println(cmd.motors[i]);
+    for(int i=0; i<6; i++) Serial.println(cmd.servos[i]);
+    for(int i=0; i<2; i++) Serial.println(cmd.motors[i]);
     Serial.print("\t\n");
-
-    count++;
-    if(count > 100){
-      count = 0;
-    }
     print_timer = 0;
   }
 
   if(motor_timer > motor_period && motor_timer < 100){
+    digitalWrite(3, HIGH);
     send_motor_cmd(7, CMD_SET_VOLTAGE, twoscomplement14(cmd.motors[0]));
+    digitalWrite(3, LOW);
     motor_timer = 100;
-    
   }else if(motor_timer > 100+motor_period){
+    digitalWrite(3, HIGH);
     send_motor_cmd(8, CMD_SET_VOLTAGE, twoscomplement14(cmd.motors[1]));
+    digitalWrite(3, LOW);
     motor_timer = 0;
   }
 
-  if(servo_timer > 5){
+  if(servo_timer > servo_period){
     for(int i=0; i<6; i++){
-      digitalWrite(3, HIGH);
-      ISR_PWM.modifyPWMChannel(servo_channels[i], servo_pins[i], 50, count);
-      digitalWrite(3, LOW);
-//      delayMicroseconds(1000);
+      float duty = map(cmd.servos[i], 0, 180, 500, 2400)/200.0; //map 0-180º to 500-2400us to 0-100%
+      ISR_PWM.modifyPWMChannel(servo_channels[i], servo_pins[i], 50, duty);
     }
     servo_timer = 0;
   }

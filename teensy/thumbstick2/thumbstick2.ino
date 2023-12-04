@@ -112,6 +112,9 @@ void setup() {
     sticks[i].x_init = -analogRead(stick_pins[i][0]);
     sticks[i].y_init = -analogRead(stick_pins[i][1]);
   }
+
+  for(int i=0; i<6; i++) cmd.servos[i] = 90;
+  for(int i=0; i<2; i++) cmd.motors[i] = 0;
   
   digitalWrite(LED_BUILTIN, LOW);
 }
@@ -120,36 +123,36 @@ elapsedMillis stick_timer;
 elapsedMillis motor_timer;
 elapsedMillis print_timer;
 
+int stick_period = 10;
 int motor_period = 5;
 
+int16_t max_axis = 470;
+int16_t deadband_axis = 20;
+float servo_gain = 0.005;
 
 void loop() {
 
+  if(stick_timer > stick_period){
 
-  if(stick_timer > 10){
-    int16_t max_axis = 470;
-    int16_t deadband_axis = 20;
-    
     for(int i=0; i<4; i++){
       sticks[i].x = deadband(clip(-analogRead(stick_pins[i][0]) - sticks[i].x_init, -max_axis, max_axis), deadband_axis);
       sticks[i].x = map(sticks[i].x, -max_axis+deadband_axis, max_axis-deadband_axis, -511, 511);
       sticks[i].y = deadband(clip(-analogRead(stick_pins[i][1]) - sticks[i].y_init, -max_axis, max_axis), deadband_axis);
       sticks[i].y = map(sticks[i].y, -max_axis+deadband_axis, max_axis-deadband_axis, -511, 511);
       sticks[i].b = !digitalRead(stick_pins[i][2]);
-//      stick_str += String(i) + ":" + String(sticks[i].x) + "," + String(sticks[i].y) + "," + String(sticks[i].b) + "\n";
     }  
 
-    //    servos[1] = (uint8_t) clip( (int16_t) (servos[1].pos + sticks[1].x/20.0), 0, 180);
+    #define hipR 0
+    #define hipL 5
+    
+    cmd.servos[0] = clip( (int16_t)(cmd.servos[0] + sticks[0].x * servo_gain), 0, 180); //right hip, swing forward (links up) 
+    cmd.servos[1] = clip( (int16_t)(cmd.servos[1] + sticks[0].y * servo_gain), 0, 180); //right elbow, swing back
 
+    cmd.servos[2] = clip( (int16_t)(cmd.servos[2] + sticks[1].x * servo_gain), 0, 180); //left elbow, swing forward
+    cmd.servos[3] = clip( (int16_t)(cmd.servos[3] + sticks[1].y * servo_gain), 0, 180); //left shoulder, swing out
 
-    cmd.servos[0] = sticks[0].x / 4;
-    cmd.servos[1] = sticks[0].y / 4;
-
-    cmd.servos[2] = sticks[1].x / 4;
-    cmd.servos[3] = sticks[1].y / 4;
-
-    cmd.servos[4] = sticks[2].x / 4;
-    cmd.servos[5] = sticks[2].y / 4;
+    cmd.servos[4] = clip( (int16_t)(cmd.servos[4] + sticks[2].x * servo_gain), 0, 180); //right shoulder, swing in
+    cmd.servos[5] = clip( (int16_t)(cmd.servos[5] + sticks[2].y * servo_gain), 0, 180); //left hip, swing back (links up)
 
     cmd.motors[0] = sticks[3].x / 4;
     cmd.motors[1] = sticks[3].y / 4;
