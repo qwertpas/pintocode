@@ -31,49 +31,67 @@ void IRAM_ATTR TimerHandler(){
 }
  
 void setup() {
-  Serial.begin(115200); //serial monitor print
-  Serial1.begin(115200); //RS485
-  Serial1.setTimeout(1);
+  pinMode(2, OUTPUT);
+  digitalWrite(2, LOW);
 
   WiFi.mode(WIFI_STA);
+
+  delay(500); digitalWrite(2, !digitalRead(2));
 
   if (esp_now_init() == 0) {
     esp_now_set_self_role(ESP_NOW_ROLE_SLAVE);
     esp_now_register_recv_cb(OnDataRecv);
   }
 
+  delay(500); digitalWrite(2, !digitalRead(2));
+
+
   ITimer.attachInterruptInterval(HW_TIMER_INTERVAL_US, TimerHandler); //for the servo pwm
+
+  delay(500); digitalWrite(2, !digitalRead(2));
 
   for(int i=0; i<6; i++){
     pinMode(servo_pins[i], OUTPUT);
     cmd.servos[i] = 90;
     servo_channels[i] = ISR_PWM.setPWM(servo_pins[i], 50, 0);
+    delay(100);
   }
   for(int i=0; i<2; i++){
     cmd.motors[i] = 0;
   }
 
+  delay(500); digitalWrite(2, !digitalRead(2));
+
   pinMode(RS485_DE, OUTPUT);
   pinMode(RS485_RE, OUTPUT);
 
   pinMode(3, OUTPUT); //for debug since Serial TX0 is being used for RS485 
+
+  delay(500); digitalWrite(2, !digitalRead(2));
+
+//  Serial.begin(115200); //serial monitor print
+  Serial1.begin(115200); //RS485
+  Serial1.setTimeout(1);
+
+  delay(500); digitalWrite(2, !digitalRead(2));
+
 }
 
 elapsedMillis print_timer;
 elapsedMillis motor_timer;
 elapsedMillis servo_timer;
 
-int motor_period = 5;
+int motor_period = 10;
 int servo_period = 5;
 
 void loop() {
 
-  if(print_timer > 100){
-    for(int i=0; i<6; i++) Serial.println(cmd.servos[i]);
-    for(int i=0; i<2; i++) Serial.println(cmd.motors[i]);
-    Serial.print("\t\n");
-    print_timer = 0;
-  }
+//  if(print_timer > 100){
+//    for(int i=0; i<6; i++) Serial.println(cmd.servos[i]);
+//    for(int i=0; i<2; i++) Serial.println(cmd.motors[i]);
+//    Serial.print("\t\n");
+//    print_timer = 0;
+//  }
 
   if(motor_timer > motor_period && motor_timer < 100){
     digitalWrite(3, HIGH);

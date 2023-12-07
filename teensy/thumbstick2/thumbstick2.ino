@@ -8,20 +8,10 @@
  */
 
 
-#include "HX711.h"
 #include "comdef.h"
 #include "util.h"
 
 #include <elapsedMillis.h>
-#include <PWMServo.h>
-//#include <Wire.h>
-
-#define RS485_DE (9)
-#define MIN_INT8 (0x80) //most negative int8
-#define UART_SIZE 10
-
-#define ang_per_ct (90/4096.0)
-
 
 int stick_pins[4][3] = {
   {A2, A3, 3}, //stick 0 (x_pin, y_pin, button_pin)
@@ -40,70 +30,49 @@ typedef struct stick_struct {
 stick_struct sticks[4] = {0}; //40 bytes
 
 typedef struct cmd_struct {
-  uint8_t servos[6];
+  float servos[6];
   int16_t motors[2];
 } cmd_struct;
 cmd_struct cmd = {0};
 
-typedef struct motor_struct {
-  int16_t I_phase;
-  int16_t duty;
-  int16_t duty_offsetted;
-} motor_struct;
-motor_struct motor_data[2] = {0};
+int16_t max_axis = 470;
+int16_t deadband_axis = 20;
+float servo_gain = 0.005;
 
-PWMServo servo;  // create servo object to control a servo
+elapsedMillis stick_timer;
+int stick_period = 10;
 
-uint8_t motor_cmd(uint8_t addr, uint8_t CMD_TYPE, uint16_t data, motor_struct *motor_response){
-  while(Serial2.available()) Serial2.read(); //clear rx buffer
-
-  uint8_t uart2_TX[3] = {0}; //command RS485 to Ø32
-  uart2_TX[0] = CMD_TYPE | addr;
-  uart2_TX[1] = (data >> 7) & 0b01111111;
-  uart2_TX[2] = (data)      & 0b01111111;
-
-  digitalWrite(RS485_DE, HIGH);
-  Serial2.write(uart2_TX, 3);
-  Serial2.flush();
-  digitalWrite(RS485_DE, LOW);
-  uint8_t temp_rx[UART_SIZE];
-  int numread = Serial2.readBytesUntil(MIN_INT8, temp_rx, UART_SIZE);
-  if(numread == 0) return 0;
-  uint8_t checksum = 0;
-  for(int i=0; i<numread-1; i++){
-      checksum += temp_rx[i];
+#define ELBOWJOINT 'e'
+#define SHOULDERJOINT 's'
+#define HIPJOINT 'h'
+#define RIGHTSIDE 'r'
+#define LEFTSIDE 'l'
+void move_servo(char side, char joint, float pos_change){
+  //convention is positive position change is forward or out
+  if(side == RIGHTSIDE){
+    if(joint == ELBOWJOINT){
+      cmd.servos[1] = clipf(cmd.servos[1] - pos_change, 0, 126);
+    }else if(joint == SHOULDERJOINT){
+      cmd.servos[4] = clipf(cmd.servos[4] + pos_change, 40, 180);
+    }else if(joint == HIPJOINT){
+      cmd.servos[0] = clip(cmd.servos[0] + pos_change, 88, 152);
+    }
+  }else if(side == LEFTSIDE){
+    if(joint == ELBOWJOINT){
+      cmd.servos[2] = clip(cmd.servos[2] + pos_change, 40, 180);
+    }else if(joint == SHOULDERJOINT){
+      cmd.servos[3] = clip(cmd.servos[3] + pos_change, 0, 140);
+    }else if(joint == HIPJOINT){
+      cmd.servos[5] = clip(cmd.servos[5] - pos_change, 23, 95);
+    }
   }
-  checksum &= 0b01111111;
-  if(checksum != temp_rx[numread-1]) return 0;
-
-  if(pad14(temp_rx[2], temp_rx[3]) > 1200) return 0;
-  
-//  memcpy(rx, temp_rx, numread);
-  motor_response->I_phase = pad14(temp_rx[0], temp_rx[1]);
-  motor_response->duty = pad14(temp_rx[2], temp_rx[3]);
-  motor_response->duty_offsetted = pad14(temp_rx[4], temp_rx[5]);
-  return 1; //success
 }
+
 
 void setup() {
   Serial.begin(115200); //UART for printing
-  Serial2.begin(115200); // UART for RS485 output (RX2=pin7, TX2=pin8)
-  Serial2.setTimeout(1);
-  Serial3.begin(115200); //UART for joystick data
-
-//  pinMode(18, INPUT_PULLUP);
-//  pinMode(19, INPUT_PULLUP);
-//  Wire.begin(8); //join i2c bus with address #8
-//  Wire.onRequest(requestEvent); //register event
+  Serial3.begin(115200); //UART send joystick data to ESP8266
   
-  pinMode(LED_BUILTIN, OUTPUT);
-  digitalWrite(LED_BUILTIN, LOW);
-  pinMode(RS485_DE, OUTPUT);
-  digitalWrite(RS485_DE, LOW);
-
-  servo.attach(12);
-  servo.write(0);
-
   for(int i=0; i<4; i++){
     pinMode(stick_pins[i][0], INPUT);
     pinMode(stick_pins[i][1], INPUT);
@@ -115,20 +84,11 @@ void setup() {
 
   for(int i=0; i<6; i++) cmd.servos[i] = 90;
   for(int i=0; i<2; i++) cmd.motors[i] = 0;
-  
+
+  pinMode(LED_BUILTIN, OUTPUT);
   digitalWrite(LED_BUILTIN, LOW);
 }
 
-elapsedMillis stick_timer;
-elapsedMillis motor_timer;
-elapsedMillis print_timer;
-
-int stick_period = 10;
-int motor_period = 5;
-
-int16_t max_axis = 470;
-int16_t deadband_axis = 20;
-float servo_gain = 0.005;
 
 void loop() {
 
@@ -142,65 +102,33 @@ void loop() {
       sticks[i].b = !digitalRead(stick_pins[i][2]);
     }  
 
-    #define hipR 0
-    #define hipL 5
+
+//    cmd.servos[0] = clip( (int16_t)(cmd.servos[0] + sticks[0].x * servo_gain), 0, 180); //right hip, swing forward (links up) 
+//    cmd.servos[1] = clip( (int16_t)(cmd.servos[1] + sticks[0].y * servo_gain), 0, 180); //right elbow, swing back
+//    cmd.servos[2] = clip( (int16_t)(cmd.servos[2] + sticks[1].x * servo_gain), 0, 180); //left elbow, swing forward
+//    cmd.servos[3] = clip( (int16_t)(cmd.servos[3] + sticks[1].y * servo_gain), 0, 180); //left shoulder, swing out
+//    cmd.servos[4] = clip( (int16_t)(cmd.servos[4] + sticks[2].x * servo_gain), 0, 180); //right shoulder, swing in
+//    cmd.servos[5] = clip( (int16_t)(cmd.servos[5] + sticks[2].y * servo_gain), 0, 180); //left hip, swing back (links up)
+
+    move_servo(LEFTSIDE, ELBOWJOINT, sticks[0].x * servo_gain);
+    move_servo(RIGHTSIDE, ELBOWJOINT, sticks[1].x * servo_gain);
+    move_servo(LEFTSIDE, SHOULDERJOINT, sticks[0].y * servo_gain);
+    move_servo(RIGHTSIDE, SHOULDERJOINT, sticks[1].y * servo_gain);
+    move_servo(LEFTSIDE, HIPJOINT, sticks[2].x * servo_gain);
+    move_servo(RIGHTSIDE, HIPJOINT, sticks[3].x * servo_gain);
     
-    cmd.servos[0] = clip( (int16_t)(cmd.servos[0] + sticks[0].x * servo_gain), 0, 180); //right hip, swing forward (links up) 
-    cmd.servos[1] = clip( (int16_t)(cmd.servos[1] + sticks[0].y * servo_gain), 0, 180); //right elbow, swing back
 
-    cmd.servos[2] = clip( (int16_t)(cmd.servos[2] + sticks[1].x * servo_gain), 0, 180); //left elbow, swing forward
-    cmd.servos[3] = clip( (int16_t)(cmd.servos[3] + sticks[1].y * servo_gain), 0, 180); //left shoulder, swing out
-
-    cmd.servos[4] = clip( (int16_t)(cmd.servos[4] + sticks[2].x * servo_gain), 0, 180); //right shoulder, swing in
-    cmd.servos[5] = clip( (int16_t)(cmd.servos[5] + sticks[2].y * servo_gain), 0, 180); //left hip, swing back (links up)
-
-    cmd.motors[0] = sticks[3].x / 4;
-    cmd.motors[1] = sticks[3].y / 4;
+    cmd.motors[0] = sticks[3].y; // right string
+    cmd.motors[1] = sticks[2].y; //left string
 
     String cmd_str = "";
-    for(int i=0; i<6; i++){
-      cmd_str += "s" + String(i) + ":" + cmd.servos[i] + "\n";
-    }
-    for(int i=0; i<2; i++){
-      cmd_str += "m" + String(i) + ":" + cmd.motors[i] + "\n";
-    }
-
-    digitalWrite(LED_BUILTIN, HIGH);
+    for(int i=0; i<6; i++) cmd_str += "s" + String(i) + ":" + (uint8_t)(cmd.servos[i]) + "\n";
+    for(int i=0; i<2; i++)cmd_str += "m" + String(i) + ":" + cmd.motors[i] + "\n";
     Serial3.print(cmd_str);
     Serial.print(cmd_str);
     Serial.print("\t\n");
-    digitalWrite(LED_BUILTIN, LOW);
 
     stick_timer = 0;
   }
-
-  if(motor_timer > motor_period && motor_timer < 100){
-    motor_cmd(7, CMD_SET_VOLTAGE, twoscomplement14(sticks[0].x), &motor_data[0]);
-    motor_timer = 100;
-    
-  }else if(motor_timer > 100+motor_period){
-    motor_cmd(8, CMD_SET_VOLTAGE, twoscomplement14(sticks[0].y), &motor_data[1]);
-    motor_timer = 0;
-  }
-
-//  if(print_timer > 10){
-//    for(int i=0; i < 1; i++){
-//      Serial.print("motor");
-//      Serial.print(i);
-//      Serial.print("Iphase: ");
-//      Serial.println(motor_data[i].I_phase);
-//      Serial.print("motor");
-//      Serial.print(i);
-//      Serial.print("duty: ");
-//      Serial.println(motor_data[i].duty);
-//      Serial.print("motor");
-//      Serial.print(i);
-//      Serial.print("duty_offset: ");
-//      Serial.println(motor_data[i].duty_offsetted);
-//    }
-//    Serial.println("\t\n");
-//
-//    print_timer = 0;
-//  }
 
 }
