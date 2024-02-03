@@ -1,5 +1,6 @@
 // Need this for the lower level access to set them up.
 #include <HardwareSerial.h>
+#include "hal/uart_types.h" //includes RS485 definition
 
 #define MOTOR_ON 1
 #define GPIO_D1 2 //breakout GPIO
@@ -16,19 +17,18 @@
 #define UNLIT HIGH
 
 
-//Define two Serial devices mapped to the two internal UARTs
-HardwareSerial MySerial0(0);
-HardwareSerial MySerial1(1);
-HardwareSerial MySerial2(2);
+HardwareSerial hwserial0(0);
+HardwareSerial hwserial1(1);
+HardwareSerial hwserial2(2);
 
-
-hw_timer_t *timer0 = NULL;
-void IRAM_ATTR timer0_ISR()
-{
-    digitalWrite(GPIO_D1, !digitalRead(GPIO_D1));
-    timerStop(timer0);
-
-}
+//
+//hw_timer_t *timer0 = NULL;
+//void IRAM_ATTR timer0_ISR()
+//{
+//    digitalWrite(GPIO_D1, !digitalRead(GPIO_D1));
+//    timerStop(timer0);
+//
+//}
 
 
 void setup()
@@ -37,33 +37,36 @@ void setup()
     Serial.begin(115200);
     Serial.setTimeout(1);
 
-    // SerialX.begin(baudrate, parity, RX pin, TX pin);
-    MySerial0.begin(115200, SERIAL_8N1, UART0_RX, UART0_TX);
-    MySerial0.print("MySerial0");
+    hwserial0.begin(115200, SERIAL_8N1); //baudrate, parity
+    hwserial0.setPins(UART0_RX, UART0_TX, -1, UART0_DE); //RX, TX, CTS, RTS (DE)
+    hwserial0.setMode(UART_MODE_RS485_HALF_DUPLEX);
+    hwserial0.print("hwserial0");
 
-    MySerial1.begin(115200, SERIAL_8N1, UART1_RX, UART1_TX);
-    MySerial1.print("MySerial1");
+    hwserial1.begin(115200, SERIAL_8N1);
+    hwserial1.setPins(UART1_RX, UART1_TX, -1, UART1_DE);
+    hwserial1.setMode(UART_MODE_RS485_HALF_DUPLEX);
+    hwserial1.print("hwserial1");
 
-    MySerial2.begin(115200, SERIAL_8N1, UART2_RX, UART2_TX);
+    hwserial2.begin(115200, SERIAL_8N1, UART2_RX, UART2_TX);
 
     pinMode(LED_BUILTIN, OUTPUT);
     
     pinMode(MOTOR_ON, OUTPUT);
-    digitalWrite(MOTOR_ON, LOW);
+    digitalWrite(MOTOR_ON, HIGH);
 
-    pinMode(GPIO_D1, OUTPUT);
-    digitalWrite(GPIO_D1, LOW);
+//    pinMode(GPIO_D1, OUTPUT);
+//    digitalWrite(GPIO_D1, LOW);
 
-    pinMode(UART0_DE, OUTPUT);
-    digitalWrite(UART0_DE, HIGH);
+//    pinMode(UART0_DE, OUTPUT);
+//    digitalWrite(UART0_DE, HIGH);
+//
+//    pinMode(UART1_DE, OUTPUT);
+//    digitalWrite(UART1_DE, HIGH);
 
-    pinMode(UART1_DE, OUTPUT);
-    digitalWrite(UART1_DE, HIGH);
-
-    timer0 = timerBegin(0, 80, true); //80MHz clock, 80div=1us precision, true=count up
-    timerAttachInterrupt(timer0, &timer0_ISR, true); //true=edgetriggered
-    timerAlarmWrite(timer0, 50000, true); //microseconds, true=autoreload
-    timerAlarmEnable(timer0); //start counting
+//    timer0 = timerBegin(0, 80, true); //80MHz clock, 80div=1us precision, true=count up
+//    timerAttachInterrupt(timer0, &timer0_ISR, true); //true=edgetriggered
+//    timerAlarmWrite(timer0, 50000, true); //microseconds, true=autoreload
+//    timerAlarmEnable(timer0); //start counting
 }
 
 void loop()
@@ -75,9 +78,9 @@ void loop()
     digitalWrite(LED_BUILTIN, LIT);
 
     Serial.println("AAA");
-    MySerial0.println("BBB");
-    MySerial1.println("CCC");
-    MySerial2.println("DDD");
+    hwserial0.println("BBB");
+    hwserial1.println("CCC");
+    hwserial2.println("DDD");
 
     delay(10);
     
