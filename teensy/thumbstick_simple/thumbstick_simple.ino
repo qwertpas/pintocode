@@ -2,6 +2,7 @@
 #include "comdef.h"
 #include "util.h"
 #include <elapsedMillis.h>
+#include <String.h>
 
 #define RS485_DE (9)
 #define MIN_INT8 (0x80) //most negative int8
@@ -48,7 +49,9 @@ uint8_t motor_cmd(uint8_t addr, uint8_t CMD_TYPE, uint16_t data, uint8_t *rx){
   Serial2.write(uart2_TX, 3);
   Serial2.flush();
   digitalWrite(RS485_DE, LOW);
-  int numread = Serial2.readBytesUntil(MIN_INT8, rx, 10);
+  delay(1);
+//  int numread = Serial2.readBytesUntil(MIN_INT8, rx, 10);
+  int numread = Serial2.readBytes(rx, 10);
   return numread; 
 }
 
@@ -79,24 +82,28 @@ void setup() {
 
 elapsedMillis stick_timer;
 elapsedMillis print_timer;
-int stick_period = 10;
+int stick_period = 15;
 int print_period = 500;
 
-
+int max_duty = 799;
 
 void loop() {
 
+  
   if(stick_timer > stick_period){
+ 
     for(int i=0; i<N_STICKS; i++){
       sticks[i].x = deadband(clip(-analogRead(stick_pins[i][0]) - sticks[i].x_init, -max_axis, max_axis), deadband_axis);
-      sticks[i].x = map(sticks[i].x, -max_axis+deadband_axis, max_axis-deadband_axis, -511, 511);
+      sticks[i].x = map(sticks[i].x, -max_axis+deadband_axis, max_axis-deadband_axis, -max_duty, max_duty);
       sticks[i].y = deadband(clip(-analogRead(stick_pins[i][1]) - sticks[i].y_init, -max_axis, max_axis), deadband_axis);
-      sticks[i].y = map(sticks[i].y, -max_axis+deadband_axis, max_axis-deadband_axis, -511, 511);
+      sticks[i].y = map(sticks[i].y, -max_axis+deadband_axis, max_axis-deadband_axis, -max_duty, max_duty);
       sticks[i].b = !digitalRead(stick_pins[i][2]);
     }  
 
   
-    motor_cmd(7, CMD_SET_VOLTAGE, twoscomplement14(sticks[0].x), uart2_RX);
+    int respond_num = motor_cmd(7, CMD_SET_VOLTAGE, twoscomplement14(sticks[0].x), uart2_RX);
+//    delay(1);
+//    motor_cmd(6, CMD_SET_VOLTAGE, twoscomplement14(sticks[0].y), uart2_RX);
 //    int16_t padded_rx[4];
 //    padded_rx[0] = pad14(uart2_RX[0], uart2_RX[1]);
 //    padded_rx[1] = pad14(uart2_RX[2], uart2_RX[3]);
@@ -105,6 +112,23 @@ void loop() {
 //    Serial.print("rs1: ");
 //    Serial.println(padded_rx[1]);
 
+    int I_q = pad14(uart2_RX[0], uart2_RX[1]);
+    int I_d = pad14(uart2_RX[2], uart2_RX[3]);
+    int temp_raw = pad14(uart2_RX[4], uart2_RX[5]);
+    float temp = (1.43 - (3.3 / 4096.0 * temp_raw)) / 0.0043 + 25.0;
+//    int D_u = uart2_RX[6];
+//    int D_v = uart2_RX[7];
+//    int D_w = uart2_RX[8];
+
+//    Serial.println("I_q: " + String(I_q));
+//    Serial.println("I_d: " + String(I_d));
+//    Serial.println("temp: " + String(temp_raw));
+//    Serial.println("D_u: " + String(D_u));
+//    Serial.println("D_v: " + String(D_v));
+//    Serial.println("D_w: " + String(D_w));
+//    Serial.println("respond: " + String(respond_num));
+
+//    Serial.println("V_q: " + String(V_q));
     for(int i = 0; i< sizeof(uart2_RX); i++){
       Serial.println(uart2_RX[i]);
     }
@@ -113,10 +137,6 @@ void loop() {
     stick_timer = 0;
   }
 
-  if(print_timer > print_period){
-    Serial.println("alive!");
-    print_timer = 0;
-  }
 
 
 

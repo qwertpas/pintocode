@@ -1,16 +1,19 @@
 #include "HX711.h"
 #include "comdef.h"
 #include <ADS1256.h>
+#include <elapsedMillis.h>
 
 #define RS485_DE (9)
 #define MIN_INT8 (0x80) //most negative int8
-#define ENC_ADDR 5
+#define ENC_ADDR 3
 #define LOADCELL_DOUT_PIN 16
 #define LOADCELL_SCK_PIN 17
+#define CS 3
 
-ADS1256 A(4, 0, 5, 10, 2.500); //DRDY, RESET, SYNC(PDWN), CS, VREF(float).    //Teensy 4.0 mine
+ADS1256 A(4, 0, 5, CS, 2.500); //DRDY, RESET, SYNC(PDWN), CS, VREF(float).    //Teensy 4.0 mine
 
-float N_per_V = 128/0.002 * 9.81;
+float N_per_V = 2/0.00199;
+//float N_per_V = 1;
 float N_zero = 0;
 
 float ang_per_ct = 90/4096.0;
@@ -36,6 +39,7 @@ uint8_t motor_cmd(uint8_t addr, uint8_t CMD_TYPE, uint16_t data, uint8_t *rx){
   Serial2.write(uart2_TX, 3);
   Serial2.flush();
   digitalWrite(RS485_DE, LOW);
+  delayMicroseconds(1000);
   int numread = Serial2.readBytesUntil(MIN_INT8, rx, 10);
   return numread; 
 }
@@ -50,7 +54,7 @@ void calibrate_force_angle(){
     N_zero = alpha*newtons + (1-alpha)*N_zero;
 
     motor_cmd(ENC_ADDR, CMD_GET_POSITION, 1, uart2_RX);
-    float angle = pad14(uart2_RX[3], uart2_RX[4]) * ang_per_ct;
+    float angle = pad14(uart2_RX[0], uart2_RX[1]) * ang_per_ct;
     ang_zero = alpha*angle + (1-alpha)*ang_zero;
     
     Serial.print("calibrating: ");
@@ -71,38 +75,60 @@ void calibrate_force_angle(){
 void setup() {
   Serial.begin(115200);
   Serial2.begin(115200);      // start serial for RS485 output
-//  Serial2.setTimeout(1);
+  Serial2.setTimeout(1);
   
   pinMode(LED_BUILTIN, OUTPUT);
   digitalWrite(LED_BUILTIN, LOW);
   pinMode(RS485_DE, OUTPUT);
   digitalWrite(RS485_DE, LOW);
 
-  while (!Serial){}
-
   Serial.println("Initializing ADS1256");
+  digitalWrite(CS, LOW);
   A.InitializeADC();
-  A.setPGA(PGA_64);
-  A.setMUX(DIFF_0_1);
-  A.setDRATE(DRATE_500SPS);
+  digitalWrite(CS, HIGH);
+  delay(100);
+  digitalWrite(CS, LOW);
+  A.setPGA(PGA_64); //224
+  digitalWrite(CS, HIGH);
+  delay(100);
+  digitalWrite(CS, LOW);
+  A.setMUX(DIFF_0_1); 
+  digitalWrite(CS, HIGH);
+  delay(100);
+  digitalWrite(CS, LOW);
+  A.setDRATE(DRATE_500SPS); //146
+  digitalWrite(CS, HIGH);
+  delay(100);
+  
   Serial.println("Initialized ADS1256");
 
   Serial.print("PGA: ");
+  digitalWrite(CS, LOW);
   Serial.println(A.readRegister(IO_REG));
+  digitalWrite(CS, HIGH);
   delay(100);
   //--
   Serial.print("MUX: ");
+  digitalWrite(CS, LOW);
   Serial.println(A.readRegister(MUX_REG));
+  digitalWrite(CS, HIGH);
   delay(100);
   //--
   Serial.print("DRATE: ");
+  digitalWrite(CS, LOW);
   Serial.println(A.readRegister(DRATE_REG));
+  digitalWrite(CS, HIGH);
   delay(100);
   
   calibrate_force_angle();
-  
+
   digitalWrite(LED_BUILTIN, HIGH);
+
 }
+
+
+elapsedMillis sample_timer;
+
 
 void loop() {
 
@@ -113,17 +139,18 @@ void loop() {
     }
   }
 
+  if(sample_timer > 10){
+    float newtons = A.convertToVoltage(A.readSingle()) * N_per_V - N_zero;
+    Serial.print("force: ");
+    Serial.println(newtons,4);
+  
+    motor_cmd(ENC_ADDR, CMD_GET_POSITION, 1, uart2_RX);
+    float angle = pad14(uart2_RX[0], uart2_RX[1]) * ang_per_ct - ang_zero;
+    Serial.print("angle: ");
+    Serial.print(angle,4);
+    Serial.print("\t\n");
 
-  float newtons = A.convertToVoltage(A.readSingleContinuous()) * N_per_V - N_zero;
-  Serial.print("force: ");
-  Serial.println(newtons,4);
-
-  motor_cmd(ENC_ADDR, CMD_GET_POSITION, 1, uart2_RX);
-  float angle = pad14(uart2_RX[3], uart2_RX[4]) * ang_per_ct - ang_zero;
-  Serial.print("angle: ");
-  Serial.print(angle,4);
-  Serial.print("\t\n");
-
-  delay(10);
+    sample_timer = 0;
+  }
   
 }
