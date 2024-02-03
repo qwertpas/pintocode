@@ -13,8 +13,8 @@
 #define UART2_DE 7
 #define UART2_TX 8
 #define UART2_RX 9
-#define LIT LOW
-#define UNLIT HIGH
+#define LED_LIT LOW
+#define LED_UNLIT HIGH
 
 
 HardwareSerial hwserial0(0);
@@ -72,10 +72,10 @@ void setup()
 void loop()
 {
   
-    digitalWrite(LED_BUILTIN, UNLIT);
+    digitalWrite(LED_BUILTIN, LED_UNLIT);
     delay(10);
   
-    digitalWrite(LED_BUILTIN, LIT);
+    digitalWrite(LED_BUILTIN, LED_LIT);
 
     Serial.println("AAA");
     hwserial0.println("BBB");
