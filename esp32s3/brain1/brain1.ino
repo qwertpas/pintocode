@@ -21,15 +21,6 @@ HardwareSerial hwserial0(0);
 HardwareSerial hwserial1(1);
 HardwareSerial hwserial2(2);
 
-//
-//hw_timer_t *timer0 = NULL;
-//void IRAM_ATTR timer0_ISR()
-//{
-//    digitalWrite(GPIO_D1, !digitalRead(GPIO_D1));
-//    timerStop(timer0);
-//
-//}
-
 
 void setup()
 {
@@ -85,6 +76,24 @@ void loop()
     delay(10);
     
 
-
-
 }
+
+
+//uint8_t send_motor_cmd(uint8_t addr, uint8_t CMD_TYPE, uint16_t data){
+////  while(Serial1.available()) Serial1.read(); //clear rx buffer
+//
+//  uint8_t uart2_TX[3] = {0}; //command RS485 to Ø32
+//  uart2_TX[0] = CMD_TYPE | addr;
+//  uart2_TX[1] = (data >> 7) & 0b01111111;
+//  uart2_TX[2] = (data)      & 0b01111111;
+//
+//  digitalWrite(RS485_DE, HIGH);
+//  digitalWrite(RS485_RE, HIGH);
+//  Serial1.write(uart2_TX, 3);
+//  Serial1.flush();
+//  digitalWrite(RS485_DE, LOW);
+//  digitalWrite(RS485_RE, LOW);
+////  int numread = Serial1.readBytesUntil(MIN_INT8, rx, 10);
+////  return numread; 
+//  return 1;
+//}

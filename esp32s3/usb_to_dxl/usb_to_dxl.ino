@@ -1,4 +1,6 @@
 #include <HardwareSerial.h>
+#include "hal/uart_types.h" //includes RS485 definition
+
 
 //sqrlbrain board pinout
 #define MOTOR_ON 1
@@ -28,8 +30,10 @@ void setup() {
   CMD_PORT.begin(115200);
   CMD_PORT.setTimeout(1);
   
-  DBG_PORT.begin(57600, SERIAL_8N1, UART1_RX, UART1_TX);
-  DXL_PORT.begin(DXL_BAUD, SERIAL_8N1, UART2_RX, UART2_TX);
+  DBG_PORT.begin(DXL_BAUD, SERIAL_8N1);
+  DXL_PORT.setPins(UART2_RX, UART2_TX, GPIO_D1, UART2_DE);
+  DXL_PORT.setMode(UART_MODE_RS485_HALF_DUPLEX);
+
 
   pinMode(LED_BUILTIN, OUTPUT);
   digitalWrite(LED_BUILTIN, LED_LIT);
@@ -44,51 +48,46 @@ void setup() {
   
   delay(10);
 
-  dxl_write(64, 1); //torque on
+//  dxl_write(64, 1); //torque on
 }
 
 int moving = 1;
 int count = 0;
 
 void loop() {
-//  update_dxl();
 
+  //passthrough
+  update_dxl();
 //  if( CMD_PORT.baudRate() != DXL_PORT.baudRate() ){
 //    DXL_PORT.updateBaudRate(CMD_PORT.baudRate());
 //  }
-  dxl_write(64, 1); //torque on
-
-//  dxl_write(116, 512);
-//  dxl_write(65, 1);
-  
-
-//  delay(100);
-  
-//  dxl_write(116, 256);
 
 
-
-
+//  //test drive
+//  dxl_write(64, 1); //torque on
+//
 //  Serial.println(count);
-
-  int period = Serial.parseInt();
-  if(period > 0){
-      moving = 1;
-  }else if(period != 0){
-    moving = 0;
-  }
-  
-  if(moving){
-    if(count < 10){
-      dxl_write(116, 1);
-    }else{
-      dxl_write(116, 2048);
-    }
-    
-  }
-
-  count = (count + 1)%20;
-  delay(1);
+//
+//  int period = Serial.parseInt();
+//  if(period > 0){
+//      moving = 1;
+//  }else if(period != 0){
+//    moving = 0;
+//  }
+//  
+//  if(moving){
+//    if(count < 10){
+//      dxl_write(116, 1);
+//      digitalWrite(LED_BUILTIN, LED_LIT);
+//    }else{
+//      dxl_write(116, 2048);
+//      digitalWrite(LED_BUILTIN, LED_UNLIT);
+//    }
+//    
+//  }
+//
+//  count = (count + 1)%20;
+//  delay(1);
 
 }
 
