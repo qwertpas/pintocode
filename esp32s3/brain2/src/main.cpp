@@ -1,6 +1,5 @@
 #include "main.h"
 
-
 #define MOTOR_ON 1
 #define GPIO_D1 2 // breakout GPIO
 #define UART1_DE 3
@@ -23,6 +22,44 @@ HardwareSerial dxl_serial(2); // dynamixel TTL bus
 #define DXL_TX_BUFFER_LENGTH 1024
 unsigned char tx_buffer[DXL_TX_BUFFER_LENGTH];
 
+hw_timer_t *timer0 = NULL;
+hw_timer_t *timer1 = NULL;
+
+elapsedMillis print_timer;
+
+typedef struct cmd_struct {
+    uint8_t servos[6];
+    int16_t motors[2];
+} cmd_struct;
+cmd_struct cmd = {0};
+
+// My MAC address: 30:30:F9:34:57:28
+
+void OnDataRecv(const uint8_t *mac, const uint8_t *incomingData, int len) {
+    //   memcpy(&myData, incomingData, sizeof(myData));
+    String receivedString = String((char *)incomingData);
+    char motor_type;
+    int index, val;
+    if (sscanf(receivedString.c_str(), "%c%d:%d", &motor_type, &index, &val) == 3) {
+        if (motor_type == 's' && index < 6) {
+            cmd.servos[index] = val;
+        }
+        if (motor_type == 'm' && index < 2) {
+            cmd.motors[index] = val;
+        }
+    }
+}
+
+void IRAM_ATTR timer0_ISR() { // update servo position at 100Hz?
+    // dxl_write(116, 1);
+    Serial.println("timer0");
+}
+
+void IRAM_ATTR timer1_ISR() { // update Ø32controllers
+    // send_O32_cmd(rs485_0, 0xA, CMD_SET_VOLTAGE, 50);
+    Serial.println("timer1");
+}
+
 void setup() {
     // USB printout
     Serial.begin(115200);
@@ -39,58 +76,72 @@ void setup() {
     rs485_1.setTimeout(1);
 
     dxl_serial.begin(57600, SERIAL_8N1, UART2_RX, UART2_TX);
-    dxl_serial.setPins(UART2_RX, UART2_TX, GPIO_D1, UART2_DE); //CTS pin should be an unused GPIO, otherwise USB serial disappears
+    dxl_serial.setPins(UART2_RX, UART2_TX, GPIO_D1, UART2_DE); // CTS pin should be an unused GPIO, otherwise USB serial disappears
     dxl_serial.setMode(UART_MODE_RS485_HALF_DUPLEX);
     dxl_serial.setTimeout(1);
 
-    
+    WiFi.mode(WIFI_MODE_STA);
+    Serial.println(WiFi.macAddress());
+    if (esp_now_init() != ESP_OK) {
+        Serial.println("Error initializing ESP-NOW");
+        delay(3000);
+        ESP.restart();
+    }
+    esp_now_register_recv_cb(OnDataRecv);
+
     pinMode(LED_BUILTIN, OUTPUT);
+    digitalWrite(LED_BUILTIN, LED_LIT);
 
     pinMode(MOTOR_ON, OUTPUT);
     digitalWrite(MOTOR_ON, HIGH);
 
-    
     delay(1000);
-    dxl_write(64, 1); //torque on
+    dxl_write(64, 1); // torque on
 
+    timer0 = timerBegin(0, 80, true);                // 80MHz clock, 80div=1us precision, true=count up
+    timerAttachInterrupt(timer0, &timer0_ISR, true); // true=edgetriggered
+    timerAlarmWrite(timer0, 1000000, true);          // microseconds, true=autoreload
+    timerAlarmEnable(timer0);                        // start counting
+
+    timer1 = timerBegin(1, 80, true);                // 80MHz clock, 80div=1us precision, true=count up
+    timerAttachInterrupt(timer1, &timer1_ISR, true); // true=edgetriggered
+    timerAlarmWrite(timer1, 1000000, true);          // microseconds, true=autoreload
+    timerAlarmEnable(timer1);                        // start counting
 }
 
 int count = 0;
+uint8_t rs485_0_rx[12] = {0};
 
 void loop() {
 
-    // digitalWrite(LED_BUILTIN, LED_UNLIT);
-    // delay(10);
-
-    // digitalWrite(LED_BUILTIN, LED_LIT);
-
-    // Serial.println("dsd");
-
-    // dxl_serial.println("A");
-
-    // // Serial.println("AAA");
-    // // hwserial0.println("BBB");
-    // // hwserial1.println("CCC");
-    // // hwserial2.println("DDD");
-
-    // delay(10);
-
-    Serial.println(count);
-
-
-    if (count < 10) {
-        dxl_write(116, 1);
-        digitalWrite(LED_BUILTIN, LED_LIT);
-    } else {
-        dxl_write(116, 2048);
-        digitalWrite(LED_BUILTIN, LED_UNLIT);
+    if (print_timer > 5) {
+        for (int i = 0; i < 6; i++)
+            Serial.println(cmd.servos[i]);
+        for (int i = 0; i < 2; i++)
+            Serial.println(cmd.motors[i]);
+        Serial.print("\t\n");
+        print_timer = 0;
     }
-    count = (count + 1)%20;
-    delay(100);
+
+    send_O32_cmd(rs485_0, 0xA, CMD_SET_VOLTAGE, twoscomplement14(cmd.motors[0]), rs485_0_rx);
+
+
+    // Serial.println(count);
+
+    // if (count < 10) {
+    //     dxl_write(116, 1);
+    //     digitalWrite(LED_BUILTIN, LED_LIT);
+    // } else {
+    //     dxl_write(116, 2048);
+    //     digitalWrite(LED_BUILTIN, LED_UNLIT);
+    // }
+    // count = (count + 1) % 20;
+    delay(10);
 }
 
-uint8_t send_O32_cmd(HardwareSerial serial, uint8_t addr, uint8_t CMD_TYPE, uint16_t data) {
-    //  while(Serial1.available()) Serial1.read(); //clear rx buffer
+uint8_t send_O32_cmd(HardwareSerial serial, uint8_t addr, uint8_t CMD_TYPE, uint16_t data, uint8_t *rx) {
+    while (Serial1.available())
+        Serial1.read(); // clear rx buffer
 
     uint8_t uart2_TX[3] = {0}; // command RS485 to Ø32
     uart2_TX[0] = CMD_TYPE | addr;
@@ -99,9 +150,8 @@ uint8_t send_O32_cmd(HardwareSerial serial, uint8_t addr, uint8_t CMD_TYPE, uint
 
     serial.write(uart2_TX, 3);
     serial.flush();
-    //  int numread = Serial1.readBytesUntil(MIN_INT8, rx, 10);
-    //  return numread;
-    return 1;
+    int numread = Serial1.readBytesUntil(MIN_INT8, rx, 10);
+    return numread;
 }
 
 void dxl_write(uint32_t addr, uint32_t value) {
@@ -133,7 +183,6 @@ void dxl_write(uint32_t addr, uint32_t value) {
     dxl_serial.write(tx_buffer, 16);
     // dxl_serial.flush();
 }
-
 
 unsigned short update_crc(unsigned short crc_accum, unsigned char *data_blk_ptr, unsigned short data_blk_size) {
     unsigned short i, j;

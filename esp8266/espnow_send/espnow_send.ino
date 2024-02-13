@@ -7,7 +7,10 @@ typedef struct __attribute__((packed)) {
   char serialData[64]; // Change the size according to your data needs
 } MyData;
 
-uint8_t recv_addr[] = {0xC8, 0xC9, 0xA3, 0x56, 0x98, 0x6F}; //other side
+//uint8_t recv_addr[] = {0xC8, 0xC9, 0xA3, 0x56, 0x98, 0x6F}; //esp8266 first brain
+uint8_t recv_addr[] = {0x30, 0x30, 0xF9, 0x34, 0x57, 0x28}; //esp32s3 xiao pcb brain 
+//uint8_t recv_addr[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}; //broadcast all
+
 
 elapsedMillis led_timer;
 elapsedMillis printaddr_timer;
