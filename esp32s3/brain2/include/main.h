@@ -11,7 +11,7 @@
 
 
 //for RS485 bus
-uint8_t send_O32_cmd(HardwareSerial serial, uint8_t addr, uint8_t CMD_TYPE, uint16_t data, uint8_t *rx);
+uint8_t send_O32_cmd(uint8_t addr, uint8_t CMD_TYPE, uint16_t data, uint8_t *rx);
 
 //for dynamixels
 void dxl_write(uint32_t addr, uint32_t value);

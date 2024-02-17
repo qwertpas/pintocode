@@ -66,7 +66,7 @@ void setup() {
     Serial.setTimeout(1);
 
     rs485_0.begin(115200, SERIAL_8N1);                 // baudrate, parity
-    rs485_0.setPins(UART0_RX, UART0_TX, -1, UART0_DE); // RX, TX, CTS, DE
+    rs485_0.setPins(UART0_RX, UART0_TX, GPIO_D1, UART0_DE); // RX, TX, CTS, DE
     rs485_0.setMode(UART_MODE_RS485_HALF_DUPLEX);
     rs485_0.setTimeout(1);
 
@@ -98,35 +98,79 @@ void setup() {
     delay(1000);
     dxl_write(64, 1); // torque on
 
-    timer0 = timerBegin(0, 80, true);                // 80MHz clock, 80div=1us precision, true=count up
-    timerAttachInterrupt(timer0, &timer0_ISR, true); // true=edgetriggered
-    timerAlarmWrite(timer0, 1000000, true);          // microseconds, true=autoreload
-    timerAlarmEnable(timer0);                        // start counting
+    // timer0 = timerBegin(0, 80, true);                // 80MHz clock, 80div=1us precision, true=count up
+    // timerAttachInterrupt(timer0, &timer0_ISR, true); // true=edgetriggered
+    // timerAlarmWrite(timer0, 1000000, true);          // microseconds, true=autoreload
+    // timerAlarmEnable(timer0);                        // start counting
 
-    timer1 = timerBegin(1, 80, true);                // 80MHz clock, 80div=1us precision, true=count up
-    timerAttachInterrupt(timer1, &timer1_ISR, true); // true=edgetriggered
-    timerAlarmWrite(timer1, 1000000, true);          // microseconds, true=autoreload
-    timerAlarmEnable(timer1);                        // start counting
+    // timer1 = timerBegin(1, 80, true);                // 80MHz clock, 80div=1us precision, true=count up
+    // timerAttachInterrupt(timer1, &timer1_ISR, true); // true=edgetriggered
+    // timerAlarmWrite(timer1, 1000000, true);          // microseconds, true=autoreload
+    // timerAlarmEnable(timer1);                        // start counting
 }
 
 int count = 0;
 uint8_t rs485_0_rx[12] = {0};
+uint8_t recv_bytes = 0;
 
 void loop() {
 
-    if (print_timer > 5) {
-        for (int i = 0; i < 6; i++)
-            Serial.println(cmd.servos[i]);
-        for (int i = 0; i < 2; i++)
-            Serial.println(cmd.motors[i]);
-        Serial.print("\t\n");
-        print_timer = 0;
+    // if (print_timer > 100) {
+    //     // for (int i = 0; i < 6; i++)
+    //     //     Serial.println(cmd.servos[i]);
+    //     // for (int i = 0; i < 2; i++)
+    //     //     Serial.println(cmd.motors[i]);
+    //     // Serial.print("\t\n");
+
+
+    //     for (int i = 0; i < recv_bytes; i++) {
+    //         Serial.print(i);
+    //         Serial.print(": ");
+    //         Serial.println(rs485_0_rx[i]);
+    //     }
+
+    //     print_timer = 0;
+    // }
+
+    recv_bytes = send_O32_cmd(0x2, CMD_SET_VOLTAGE, twoscomplement14(cmd.motors[0]), rs485_0_rx);
+    delay(10);
+
+    if(Serial.availableForWrite()){
+        Serial.print("2numread: ");
+        Serial.println(recv_bytes);
+        for(int i = 0; i < recv_bytes; i++){
+            Serial.println(rs485_0_rx[i]);
+        }
+        Serial.println('\t');
+    }
+    
+
+
+
+    recv_bytes = send_O32_cmd(0x3, CMD_SET_VOLTAGE, twoscomplement14(cmd.motors[0]), rs485_0_rx);
+    delay(10);
+
+    if(Serial.availableForWrite()){
+        Serial.print("3numread: ");
+        Serial.println(recv_bytes);
+        for(int i = 0; i < recv_bytes; i++){
+            Serial.println(rs485_0_rx[i]);
+        }
+        Serial.println('\t');
     }
 
-    send_O32_cmd(rs485_0, 0xA, CMD_SET_VOLTAGE, twoscomplement14(cmd.motors[0]), rs485_0_rx);
 
+    
+    // rs485_0.write("sds");
 
-    // Serial.println(count);
+    // uint8_t uart2_TX[3] = {0}; // command RS485 to Ø32
+    // uint16_t data = twoscomplement14(cmd.motors[0]);
+    // uart2_TX[0] = CMD_SET_VOLTAGE | 0xA;
+    // uart2_TX[1] = (data >> 7) & 0b01111111;
+    // uart2_TX[2] = (data) & 0b01111111;
+
+    // rs485_0.write(uart2_TX, 3);
+
 
     // if (count < 10) {
     //     dxl_write(116, 1);
@@ -136,21 +180,19 @@ void loop() {
     //     digitalWrite(LED_BUILTIN, LED_UNLIT);
     // }
     // count = (count + 1) % 20;
-    delay(10);
 }
 
-uint8_t send_O32_cmd(HardwareSerial serial, uint8_t addr, uint8_t CMD_TYPE, uint16_t data, uint8_t *rx) {
-    while (Serial1.available())
-        Serial1.read(); // clear rx buffer
+uint8_t send_O32_cmd(uint8_t addr, uint8_t CMD_TYPE, uint16_t data, uint8_t *rx) {
+    while (rs485_0.available()) rs485_0.read(); // clear rx buffer
 
     uint8_t uart2_TX[3] = {0}; // command RS485 to Ø32
     uart2_TX[0] = CMD_TYPE | addr;
     uart2_TX[1] = (data >> 7) & 0b01111111;
     uart2_TX[2] = (data) & 0b01111111;
 
-    serial.write(uart2_TX, 3);
-    serial.flush();
-    int numread = Serial1.readBytesUntil(MIN_INT8, rx, 10);
+    rs485_0.write(uart2_TX, 3);
+    rs485_0.flush();
+    int numread = rs485_0.readBytesUntil(MIN_INT8, rx, 10);
     return numread;
 }
 
