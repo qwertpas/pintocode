@@ -65,7 +65,7 @@ void setup() {
     Serial.begin(115200);
     Serial.setTimeout(1);
 
-    rs485_0.begin(115200, SERIAL_8N1);                 // baudrate, parity
+    rs485_0.begin(1000000, SERIAL_8N1);                 // baudrate, parity
     rs485_0.setPins(UART0_RX, UART0_TX, GPIO_D1, UART0_DE); // RX, TX, CTS, DE
     rs485_0.setMode(UART_MODE_RS485_HALF_DUPLEX);
     rs485_0.setTimeout(1);
@@ -110,7 +110,8 @@ void setup() {
 }
 
 int count = 0;
-uint8_t rs485_0_rx[12] = {0};
+uint8_t motor2_response[12] = {0};
+uint8_t motor3_response[12] = {0};
 uint8_t recv_bytes = 0;
 
 void loop() {
@@ -131,46 +132,42 @@ void loop() {
 
     //     print_timer = 0;
     // }
-
-    recv_bytes = send_O32_cmd(0x2, CMD_SET_VOLTAGE, twoscomplement14(cmd.motors[0]), rs485_0_rx);
+    recv_bytes = send_O32_cmd(0x2, CMD_SET_VOLTAGE, twoscomplement14(cmd.motors[0]), motor2_response);
     delay(10);
 
     if(Serial.availableForWrite()){
-        Serial.print("2numread: ");
-        Serial.println(recv_bytes);
-        for(int i = 0; i < recv_bytes; i++){
-            Serial.println(rs485_0_rx[i]);
+        Serial.println("mot2: ");
+        if(recv_bytes == 5){
+            int16_t pos = pad14(motor2_response[0], motor2_response[1]);
+            int16_t cur = pad14(motor2_response[2], motor2_response[3]);
+            int16_t temp = pad14(0x0, motor2_response[4]);
+            Serial.print("pos: ");
+            Serial.println(pos);
+            Serial.print("cur: ");
+            Serial.println(cur);
+            Serial.print("temp: ");
+            Serial.println(temp);
+        }else{
+            Serial.println(recv_bytes);
+            for(int i = 0; i < recv_bytes; i++){
+                Serial.println(motor2_response[i]);
+            }
         }
+        
         Serial.println('\t');
     }
     
-
-
-
-    recv_bytes = send_O32_cmd(0x3, CMD_SET_VOLTAGE, twoscomplement14(cmd.motors[0]), rs485_0_rx);
+    recv_bytes = send_O32_cmd(0x3, CMD_SET_VOLTAGE, twoscomplement14(cmd.motors[0]), motor3_response);
     delay(10);
 
-    if(Serial.availableForWrite()){
-        Serial.print("3numread: ");
-        Serial.println(recv_bytes);
-        for(int i = 0; i < recv_bytes; i++){
-            Serial.println(rs485_0_rx[i]);
-        }
-        Serial.println('\t');
-    }
-
-
-    
-    // rs485_0.write("sds");
-
-    // uint8_t uart2_TX[3] = {0}; // command RS485 to Ø32
-    // uint16_t data = twoscomplement14(cmd.motors[0]);
-    // uart2_TX[0] = CMD_SET_VOLTAGE | 0xA;
-    // uart2_TX[1] = (data >> 7) & 0b01111111;
-    // uart2_TX[2] = (data) & 0b01111111;
-
-    // rs485_0.write(uart2_TX, 3);
-
+    // if(Serial.availableForWrite()){
+    //     Serial.print("3numread: ");
+    //     Serial.println(recv_bytes);
+    //     for(int i = 0; i < recv_bytes; i++){
+    //         Serial.println(motor3_response[i]);
+    //     }
+    //     Serial.println('\t');
+    // }
 
     // if (count < 10) {
     //     dxl_write(116, 1);
@@ -192,7 +189,8 @@ uint8_t send_O32_cmd(uint8_t addr, uint8_t CMD_TYPE, uint16_t data, uint8_t *rx)
 
     rs485_0.write(uart2_TX, 3);
     rs485_0.flush();
-    int numread = rs485_0.readBytesUntil(MIN_INT8, rx, 10);
+    delayMicroseconds(200);
+    uint8_t numread = rs485_0.readBytesUntil(MIN_INT8, rx, 10);
     return numread;
 }
 
