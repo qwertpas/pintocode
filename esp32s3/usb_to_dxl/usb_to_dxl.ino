@@ -1,5 +1,5 @@
 #include <HardwareSerial.h>
-#include "hal/uart_types.h" //includes RS485 definition
+//#include "hal/uart_types.h" //includes RS485 definition
 
 
 //sqrlbrain board pinout
@@ -21,7 +21,6 @@
 HardwareSerial DBG_PORT(1); //for debugging
 HardwareSerial DXL_PORT(2); //comm with dynamixel using usual connector
 
-#define DXL_BAUD 57600 //default baud for XL330
 #define DXL_TX_BUFFER_LENGTH  1024
 unsigned char tx_buffer[DXL_TX_BUFFER_LENGTH];
 
@@ -30,9 +29,11 @@ void setup() {
   CMD_PORT.begin(115200);
   CMD_PORT.setTimeout(1);
   
-  DBG_PORT.begin(DXL_BAUD, SERIAL_8N1);
-  DXL_PORT.setPins(UART2_RX, UART2_TX, GPIO_D1, UART2_DE);
-  DXL_PORT.setMode(UART_MODE_RS485_HALF_DUPLEX);
+
+  DBG_PORT.begin(57600, SERIAL_8N1, UART2_RX, UART2_TX);
+  DBG_PORT.setPins(UART2_RX, UART2_TX, GPIO_D1, UART2_DE); // CTS pin should be an unused GPIO, otherwise USB serial disappears
+  DBG_PORT.setMode(UART_MODE_RS485_HALF_DUPLEX);
+  DBG_PORT.setTimeout(1);
 
 
   pinMode(LED_BUILTIN, OUTPUT);
@@ -58,36 +59,6 @@ void loop() {
 
   //passthrough
   update_dxl();
-//  if( CMD_PORT.baudRate() != DXL_PORT.baudRate() ){
-//    DXL_PORT.updateBaudRate(CMD_PORT.baudRate());
-//  }
-
-
-//  //test drive
-//  dxl_write(64, 1); //torque on
-//
-//  Serial.println(count);
-//
-//  int period = Serial.parseInt();
-//  if(period > 0){
-//      moving = 1;
-//  }else if(period != 0){
-//    moving = 0;
-//  }
-//  
-//  if(moving){
-//    if(count < 10){
-//      dxl_write(116, 1);
-//      digitalWrite(LED_BUILTIN, LED_LIT);
-//    }else{
-//      dxl_write(116, 2048);
-//      digitalWrite(LED_BUILTIN, LED_UNLIT);
-//    }
-//    
-//  }
-//
-//  count = (count + 1)%20;
-//  delay(1);
 
 }
 

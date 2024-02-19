@@ -18,7 +18,7 @@ HardwareSerial rs485_0(0);    // RS485 bus 0
 HardwareSerial rs485_1(1);    // RS485 bus 1
 HardwareSerial dxl_serial(2); // dynamixel TTL bus
 
-#define DXL_BAUD 57600 // default baud for XL330
+#define DXL_BAUD 1000000 
 #define DXL_TX_BUFFER_LENGTH 1024
 unsigned char tx_buffer[DXL_TX_BUFFER_LENGTH];
 
@@ -61,6 +61,12 @@ void IRAM_ATTR timer1_ISR() { // update Ø32controllers
 }
 
 void setup() {
+    pinMode(LED_BUILTIN, OUTPUT);
+    digitalWrite(LED_BUILTIN, LED_UNLIT);
+
+    pinMode(MOTOR_ON, OUTPUT);
+    digitalWrite(MOTOR_ON, LOW);
+
     // USB printout
     Serial.begin(115200);
     Serial.setTimeout(1);
@@ -75,7 +81,7 @@ void setup() {
     rs485_1.setMode(UART_MODE_RS485_HALF_DUPLEX);
     rs485_1.setTimeout(1);
 
-    dxl_serial.begin(57600, SERIAL_8N1, UART2_RX, UART2_TX);
+    dxl_serial.begin(DXL_BAUD, SERIAL_8N1, UART2_RX, UART2_TX);
     dxl_serial.setPins(UART2_RX, UART2_TX, GPIO_D1, UART2_DE); // CTS pin should be an unused GPIO, otherwise USB serial disappears
     dxl_serial.setMode(UART_MODE_RS485_HALF_DUPLEX);
     dxl_serial.setTimeout(1);
@@ -89,14 +95,16 @@ void setup() {
     }
     esp_now_register_recv_cb(OnDataRecv);
 
-    pinMode(LED_BUILTIN, OUTPUT);
-    digitalWrite(LED_BUILTIN, LED_LIT);
+    
 
-    pinMode(MOTOR_ON, OUTPUT);
+    delay(2000);
+
+    digitalWrite(LED_BUILTIN, LED_LIT);
     digitalWrite(MOTOR_ON, HIGH);
 
-    delay(1000);
-    dxl_write(64, 1); // torque on
+    delay(500);
+
+    dxl_write(2, 64, 1); // torque on
 
     // timer0 = timerBegin(0, 80, true);                // 80MHz clock, 80div=1us precision, true=count up
     // timerAttachInterrupt(timer0, &timer0_ISR, true); // true=edgetriggered
@@ -132,7 +140,7 @@ void loop() {
 
     //     print_timer = 0;
     // }
-    recv_bytes = send_O32_cmd(0x2, CMD_SET_VOLTAGE, twoscomplement14(cmd.motors[0]), motor2_response);
+    recv_bytes = send_O32_cmd(0xA, CMD_SET_VOLTAGE, twoscomplement14(cmd.motors[0]), motor2_response);
     delay(10);
 
     if(Serial.availableForWrite()){
@@ -157,7 +165,7 @@ void loop() {
         Serial.println('\t');
     }
     
-    recv_bytes = send_O32_cmd(0x3, CMD_SET_VOLTAGE, twoscomplement14(cmd.motors[0]), motor3_response);
+    recv_bytes = send_O32_cmd(0xB, CMD_SET_VOLTAGE, twoscomplement14(cmd.motors[1]), motor3_response);
     delay(10);
 
     // if(Serial.availableForWrite()){
@@ -169,14 +177,14 @@ void loop() {
     //     Serial.println('\t');
     // }
 
-    // if (count < 10) {
-    //     dxl_write(116, 1);
-    //     digitalWrite(LED_BUILTIN, LED_LIT);
-    // } else {
-    //     dxl_write(116, 2048);
-    //     digitalWrite(LED_BUILTIN, LED_UNLIT);
-    // }
-    // count = (count + 1) % 20;
+    if (count < 10) {
+        dxl_write(2, 116, 1);
+        digitalWrite(LED_BUILTIN, LED_LIT);
+    } else {
+        dxl_write(2, 116, 2048);
+        digitalWrite(LED_BUILTIN, LED_UNLIT);
+    }
+    count = (count + 1) % 20;
 }
 
 uint8_t send_O32_cmd(uint8_t addr, uint8_t CMD_TYPE, uint16_t data, uint8_t *rx) {
@@ -194,19 +202,19 @@ uint8_t send_O32_cmd(uint8_t addr, uint8_t CMD_TYPE, uint16_t data, uint8_t *rx)
     return numread;
 }
 
-void dxl_write(uint32_t addr, uint32_t value) {
+void dxl_write(uint8_t id, uint32_t reg_addr, uint32_t value) {
     tx_buffer[0] = 0xFF; // header
     tx_buffer[1] = 0xFF; // header
     tx_buffer[2] = 0xFD; // header
     tx_buffer[3] = 0x00; // reserved
-    tx_buffer[4] = 0x01; // ID
+    tx_buffer[4] = id;   // device ID
     tx_buffer[5] = 0x09; // length L (length of instruction, parameters, and crc)
     tx_buffer[6] = 0x00; // length H
 
     tx_buffer[7] = 0x03; // instruction (write)
 
-    tx_buffer[8] = (unsigned char)(addr & 0x00FF);        // register address L
-    tx_buffer[9] = (unsigned char)((addr >> 8) & 0x00FF); // register address H
+    tx_buffer[8] = (unsigned char)(reg_addr & 0x00FF);        // register address L
+    tx_buffer[9] = (unsigned char)((reg_addr >> 8) & 0x00FF); // register address H
 
     tx_buffer[10] = (unsigned char)(value & 0x00FF);         // data 0 LSB
     tx_buffer[11] = (unsigned char)((value >> 8) & 0x00FF);  // data 1
