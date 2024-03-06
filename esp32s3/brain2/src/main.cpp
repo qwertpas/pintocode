@@ -112,7 +112,6 @@ void setup() {
     }
     esp_now_register_recv_cb(OnDataRecv);
 
-    delay(2000);
 
     Serial.println("My MAC address:");
     Serial.println(WiFi.macAddress());
@@ -120,7 +119,8 @@ void setup() {
     Serial.println("Turning on motors...");
     digitalWrite(LED_BUILTIN, LED_LIT);
     digitalWrite(MOTOR_ON, HIGH);
-    delay(500);
+
+    delay(4000);
 
     for(int i=0; i<5; i++){
         dxl_write(dxl_ids[i], 64, 1); // torque on
@@ -141,52 +141,102 @@ uint8_t motA_nbytes = 0;
 uint8_t motB_rx[12] = {0};
 uint8_t motB_nbytes = 0;
 
-uint8_t calib_done = 0;
-int32_t calib_pos_A = 0; //position that motor stalls
+uint8_t calib_state = 1; // 1:moving, 0:done  
+uint16_t calib_cmd = 100; //motor power (out of 1599) to calibrate with
+uint16_t calib_cur_thres = 800; //milliamps at stall
+int32_t calib_pos_A = 0; // position that motor stalls
 int32_t calib_pos_B = 0;
 
 void loop() {
 
-    uint32_t sns_adc = analogRead(GPIO_D1);
+    uint32_t sns_adc = analogRead(GPIO_D1); //read current no matter what
     if(sns_adc == 0){
         cur_tot = 0;
     }else{
         cur_tot = alpha_cur_tot*(sns_adc*11.224f + 222.865f) + (1-alpha_cur_tot)*cur_tot;
     }
 
-    if(!calib_done){
-        motA_nbytes = send_O32_cmd(0xA, CMD_SET_VOLTAGE, twoscomplement14(cmd.motors[0]), motA_rx);
-        motB_nbytes = send_O32_cmd(0xB, CMD_SET_VOLTAGE, twoscomplement14(cmd.motors[1]), motB_rx);
+    if(recv_watchdog > 100){ //didn't receive anything from joystick in a while
+        cmd_struct cmd = {0};
+        motA_nbytes = send_O32_cmd(0xA, CMD_SET_VOLTAGE, 0, motA_rx);
+        motB_nbytes = send_O32_cmd(0xB, CMD_SET_VOLTAGE, 0, motB_rx);
+        for(int i=0; i<5; i++){
+            dxl_write(dxl_ids[i], 64, 1); // torque off
+        }
+        Serial.println("not receiving joystick");
+        return; //skip what comes after
+    }
+
+    if(calib_state){ //calibration happens when calib_state != 0
+        switch (calib_state){
+        case 1: //extend A at low power until stall
+            motA_nbytes = send_O32_cmd(0xA, CMD_SET_VOLTAGE, twoscomplement14(calib_cmd), motA_rx);
+            motB_nbytes = send_O32_cmd(0xB, CMD_SET_VOLTAGE, 0, motB_rx);
+            if(cur_tot > calib_cur_thres){
+                delay(1000);
+                calib_pos_A = pad28(motA_rx[0], motA_rx[1], motA_rx[2], motA_rx[3]);
+
+                calib_state = 2;
+            }
+            break;
+        case 2: //extend B at low power until stall
+            motA_nbytes = send_O32_cmd(0xA, CMD_SET_VOLTAGE, 0, motA_rx);
+            motB_nbytes = send_O32_cmd(0xB, CMD_SET_VOLTAGE, twoscomplement14(calib_cmd), motB_rx);
+            if(cur_tot > calib_cur_thres){
+                delay(1000);
+                calib_pos_B = pad28(motB_rx[0], motB_rx[1], motB_rx[2], motB_rx[3]);
+                
+                motA_nbytes = send_O32_cmd(0xA, CMD_SET_VOLTAGE, 0, motA_rx);
+                motA_nbytes = send_O32_cmd(0xA, CMD_SET_VOLTAGE, 0, motA_rx);
+                calib_state = 0;
+            }
+            break;
+        default:
+            break;
+        }
+
+        if(print_timer > print_period){
+            print_timer = 0;
+            Serial.print("calib_state: ");
+            Serial.println(calib_state);
+            Serial.print("cur_tot: ");
+            Serial.println(cur_tot);
+            Serial.print("calib_pos_A: ");
+            Serial.println(calib_pos_A);
+            Serial.print("calib_pos_B: ");
+            Serial.println(calib_pos_B);
+            Serial.println("\t");
+        }
 
         return;
     }
 
-    if(recv_watchdog < 100){
-    // if(1){
-        motA_nbytes = send_O32_cmd(0xA, CMD_SET_VOLTAGE, twoscomplement14(cmd.motors[0]), motA_rx);
-        motB_nbytes = send_O32_cmd(0xB, CMD_SET_VOLTAGE, twoscomplement14(cmd.motors[1]), motB_rx);
+    //normal operation
+    motA_nbytes = send_O32_cmd(0xA, CMD_SET_VOLTAGE, twoscomplement14(cmd.motors[0]), motA_rx);
+    motB_nbytes = send_O32_cmd(0xB, CMD_SET_VOLTAGE, twoscomplement14(cmd.motors[1]), motB_rx);
 
-        for(int i=0; i<5; i++){
-            uint16_t duty = map(cmd.servos[i], 0, 180, 0, 4095); //map 0-180º to 0-4095 for dynamixel position
-            dxl_write(dxl_ids[i], 116, duty);
-        }
-    }else{ //send 0 motor commands
-        cmd_struct cmd = {0};
+    for(int i=0; i<5; i++){
+        uint16_t duty = map(cmd.servos[i], 0, 180, 0, 4095); //map 0-180º to 0-4095 for dynamixel position
+        dxl_write(dxl_ids[i], 116, duty);
+    }
 
-        motA_nbytes = send_O32_cmd(0xA, CMD_SET_VOLTAGE, 0, motA_rx);
-        motB_nbytes = send_O32_cmd(0xB, CMD_SET_VOLTAGE, 0, motB_rx);
-
-        for(int i=0; i<5; i++){
-            dxl_write(dxl_ids[i], 64, 1); // torque off
+    if(Serial.available()){
+        char inputChar = Serial.read();
+        if(inputChar == 'R'){
+            ESP.restart();
         }
     }
 
-    
     if(Serial.availableForWrite() && print_timer > print_period){
         print_timer = 0;
 
         Serial.print("cur_tot: ");
         Serial.println(cur_tot);
+
+        Serial.print("calib_pos_A: ");
+        Serial.println(calib_pos_A);
+        Serial.print("calib_pos_B: ");
+        Serial.println(calib_pos_B);
 
         if(motA_nbytes == 7){
             int32_t cont_angle = pad28(motA_rx[0], motA_rx[1], motA_rx[2], motA_rx[3]);
@@ -195,13 +245,10 @@ void loop() {
 
             Serial.print("cmd_A: ");
             Serial.println(cmd.motors[0]);
+            Serial.print("cont_angle_A: ");
+            Serial.println(cont_angle);
             Serial.print("temp_ntc_A: ");
             Serial.println(temp_ntc);
-        }else{
-            // Serial.println(motA_nbytes);
-            // for(int i = 0; i < motA_nbytes; i++){
-            //     Serial.println(motA_rx[i]);
-            // }
         }
 
         if(motB_nbytes == 7){
@@ -211,9 +258,10 @@ void loop() {
 
             Serial.print("cmd_B: ");
             Serial.println(cmd.motors[1]);
+            Serial.print("cont_angle_B: ");
+            Serial.println(cont_angle);
             Serial.print("temp_ntc_B: ");
             Serial.println(temp_ntc);
-        }else{
         }
 
         Serial.println('\t');
