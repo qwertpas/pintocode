@@ -1,7 +1,17 @@
 #include <stdlib.h>
-#define MIN_INT8 (0x80) //most negative int8
+#include <cstdint>
 
 int16_t clip(int16_t x, int16_t min, int16_t max) {
+  if (x > max) {
+    return max;
+  } else if (x < min) {
+    return min;
+  } else {
+    return x;
+  }
+}
+
+float clipf(float x, float min, float max) {
   if (x > max) {
     return max;
   } else if (x < min) {
@@ -33,11 +43,5 @@ int16_t twoscomplement14(int16_t num16) {
 int16_t pad14(uint8_t num7_0, uint8_t num7_1) {
   int16_t res = (num7_0 << 7) | (num7_1);
   if (res & 0x2000) return res | 0xC000;
-  else return res;
-}
-
-int32_t pad28(uint8_t num7_0, uint8_t num7_1, uint8_t num7_2, uint8_t num7_3) {
-  int32_t res = (num7_0 << 21) | (num7_1 << 14) | (num7_2 << 7) | (num7_3);
-  if (res & 0x08000000) return res | 0xF0000000;
   else return res;
 }

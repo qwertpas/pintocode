@@ -14,18 +14,26 @@
 #define LED_LIT LOW
 #define LED_UNLIT HIGH
 
+#define GPIO33_UNUSED 33
+#define GPIO34_UNUSED 34
+#define GPIO35_UNUSED 35
+
 HardwareSerial rs485_0(0);    // RS485 bus 0
 HardwareSerial rs485_1(1);    // RS485 bus 1
 HardwareSerial dxl_serial(2); // dynamixel TTL bus
 
-#define DXL_BAUD 1000000 
+uint8_t dxl_ids[] = {
+    3,  //right back
+    4,  //right front
+    5,  //left front
+    6,  //left back 
+    7   //roll
+};
+
 #define DXL_TX_BUFFER_LENGTH 1024
 unsigned char tx_buffer[DXL_TX_BUFFER_LENGTH];
 
 hw_timer_t *timer0 = NULL;
-hw_timer_t *timer1 = NULL;
-
-elapsedMillis print_timer;
 
 typedef struct cmd_struct {
     uint8_t servos[6];
@@ -33,10 +41,15 @@ typedef struct cmd_struct {
 } cmd_struct;
 cmd_struct cmd = {0};
 
-// My MAC address: 30:30:F9:34:57:28
+uint32_t recv_watchdog = 0;
+
+elapsedMillis print_timer;
+uint16_t print_period = 10;
+
+// MAC address of brain A: 30:30:F9:34:57:28
+// MAC address of brain B: 30:30:F9:34:5A:44
 
 void OnDataRecv(const uint8_t *mac, const uint8_t *incomingData, int len) {
-    //   memcpy(&myData, incomingData, sizeof(myData));
     String receivedString = String((char *)incomingData);
     char motor_type;
     int index, val;
@@ -47,17 +60,19 @@ void OnDataRecv(const uint8_t *mac, const uint8_t *incomingData, int len) {
         if (motor_type == 'm' && index < 2) {
             cmd.motors[index] = val;
         }
+
+        if(recv_watchdog > 100){
+            for(int i=0; i<5; i++){
+                dxl_write(dxl_ids[i], 64, 1); // servos torque on
+            }
+        }
+        recv_watchdog = 0;
     }
 }
 
-void IRAM_ATTR timer0_ISR() { // update servo position at 100Hz?
-    // dxl_write(116, 1);
-    Serial.println("timer0");
-}
-
-void IRAM_ATTR timer1_ISR() { // update Ø32controllers
-    // send_O32_cmd(rs485_0, 0xA, CMD_SET_VOLTAGE, 50);
-    Serial.println("timer1");
+void IRAM_ATTR timer0_ISR() { // 1kHz
+    recv_watchdog++;
+    // Serial.println("timer0");
 }
 
 void setup() {
@@ -67,12 +82,14 @@ void setup() {
     pinMode(MOTOR_ON, OUTPUT);
     digitalWrite(MOTOR_ON, LOW);
 
+    pinMode(GPIO_D1, INPUT);
+
     // USB printout
     Serial.begin(115200);
     Serial.setTimeout(1);
 
     rs485_0.begin(1000000, SERIAL_8N1);                 // baudrate, parity
-    rs485_0.setPins(UART0_RX, UART0_TX, GPIO_D1, UART0_DE); // RX, TX, CTS, DE
+    rs485_0.setPins(UART0_RX, UART0_TX, -1, UART0_DE); // RX, TX, CTS, DE
     rs485_0.setMode(UART_MODE_RS485_HALF_DUPLEX);
     rs485_0.setTimeout(1);
 
@@ -81,8 +98,8 @@ void setup() {
     rs485_1.setMode(UART_MODE_RS485_HALF_DUPLEX);
     rs485_1.setTimeout(1);
 
-    dxl_serial.begin(DXL_BAUD, SERIAL_8N1, UART2_RX, UART2_TX);
-    dxl_serial.setPins(UART2_RX, UART2_TX, GPIO_D1, UART2_DE); // CTS pin should be an unused GPIO, otherwise USB serial disappears
+    dxl_serial.begin(1000000, SERIAL_8N1, UART2_RX, UART2_TX);
+    dxl_serial.setPins(UART2_RX, UART2_TX, -1, UART2_DE); // CTS pin should be an unused GPIO, otherwise USB serial disappears
     dxl_serial.setMode(UART_MODE_RS485_HALF_DUPLEX);
     dxl_serial.setTimeout(1);
 
@@ -95,97 +112,121 @@ void setup() {
     }
     esp_now_register_recv_cb(OnDataRecv);
 
-    
-
     delay(2000);
 
+    Serial.println("My MAC address:");
+    Serial.println(WiFi.macAddress());
+
+    Serial.println("Turning on motors...");
     digitalWrite(LED_BUILTIN, LED_LIT);
     digitalWrite(MOTOR_ON, HIGH);
-
     delay(500);
 
-    dxl_write(2, 64, 1); // torque on
+    for(int i=0; i<5; i++){
+        dxl_write(dxl_ids[i], 64, 1); // torque on
+    }
 
-    // timer0 = timerBegin(0, 80, true);                // 80MHz clock, 80div=1us precision, true=count up
-    // timerAttachInterrupt(timer0, &timer0_ISR, true); // true=edgetriggered
-    // timerAlarmWrite(timer0, 1000000, true);          // microseconds, true=autoreload
-    // timerAlarmEnable(timer0);                        // start counting
+    timer0 = timerBegin(0, 80, true);                // 80MHz clock, 80div=1us precision, true=count up
+    timerAttachInterrupt(timer0, &timer0_ISR, true); // true=edgetriggered
+    timerAlarmWrite(timer0, 1000, true);          // microseconds, true=autoreload
+    timerAlarmEnable(timer0);                        // start counting
 
-    // timer1 = timerBegin(1, 80, true);                // 80MHz clock, 80div=1us precision, true=count up
-    // timerAttachInterrupt(timer1, &timer1_ISR, true); // true=edgetriggered
-    // timerAlarmWrite(timer1, 1000000, true);          // microseconds, true=autoreload
-    // timerAlarmEnable(timer1);                        // start counting
 }
 
-int count = 0;
-uint8_t motor2_response[12] = {0};
-uint8_t motor3_response[12] = {0};
-uint8_t recv_bytes = 0;
+float cur_tot = 0.0f; 
+float alpha_cur_tot = 0.5;
+
+uint8_t motA_rx[12] = {0};
+uint8_t motA_nbytes = 0;
+uint8_t motB_rx[12] = {0};
+uint8_t motB_nbytes = 0;
+
+uint8_t calib_done = 0;
+int32_t calib_pos_A = 0; //position that motor stalls
+int32_t calib_pos_B = 0;
 
 void loop() {
 
-    // if (print_timer > 100) {
-    //     // for (int i = 0; i < 6; i++)
-    //     //     Serial.println(cmd.servos[i]);
-    //     // for (int i = 0; i < 2; i++)
-    //     //     Serial.println(cmd.motors[i]);
-    //     // Serial.print("\t\n");
+    uint32_t sns_adc = analogRead(GPIO_D1);
+    if(sns_adc == 0){
+        cur_tot = 0;
+    }else{
+        cur_tot = alpha_cur_tot*(sns_adc*11.224f + 222.865f) + (1-alpha_cur_tot)*cur_tot;
+    }
 
+    if(!calib_done){
+        motA_nbytes = send_O32_cmd(0xA, CMD_SET_VOLTAGE, twoscomplement14(cmd.motors[0]), motA_rx);
+        motB_nbytes = send_O32_cmd(0xB, CMD_SET_VOLTAGE, twoscomplement14(cmd.motors[1]), motB_rx);
 
-    //     for (int i = 0; i < recv_bytes; i++) {
-    //         Serial.print(i);
-    //         Serial.print(": ");
-    //         Serial.println(rs485_0_rx[i]);
-    //     }
+        return;
+    }
 
-    //     print_timer = 0;
-    // }
-    recv_bytes = send_O32_cmd(0xA, CMD_SET_VOLTAGE, twoscomplement14(cmd.motors[0]), motor2_response);
-    delay(10);
+    if(recv_watchdog < 100){
+    // if(1){
+        motA_nbytes = send_O32_cmd(0xA, CMD_SET_VOLTAGE, twoscomplement14(cmd.motors[0]), motA_rx);
+        motB_nbytes = send_O32_cmd(0xB, CMD_SET_VOLTAGE, twoscomplement14(cmd.motors[1]), motB_rx);
 
-    if(Serial.availableForWrite()){
-        Serial.println("mot2: ");
-        if(recv_bytes == 5){
-            int16_t pos = pad14(motor2_response[0], motor2_response[1]);
-            int16_t cur = pad14(motor2_response[2], motor2_response[3]);
-            int16_t temp = pad14(0x0, motor2_response[4]);
-            Serial.print("pos: ");
-            Serial.println(pos);
-            Serial.print("cur: ");
-            Serial.println(cur);
-            Serial.print("temp: ");
-            Serial.println(temp);
-        }else{
-            Serial.println(recv_bytes);
-            for(int i = 0; i < recv_bytes; i++){
-                Serial.println(motor2_response[i]);
-            }
+        for(int i=0; i<5; i++){
+            uint16_t duty = map(cmd.servos[i], 0, 180, 0, 4095); //map 0-180º to 0-4095 for dynamixel position
+            dxl_write(dxl_ids[i], 116, duty);
         }
-        
+    }else{ //send 0 motor commands
+        cmd_struct cmd = {0};
+
+        motA_nbytes = send_O32_cmd(0xA, CMD_SET_VOLTAGE, 0, motA_rx);
+        motB_nbytes = send_O32_cmd(0xB, CMD_SET_VOLTAGE, 0, motB_rx);
+
+        for(int i=0; i<5; i++){
+            dxl_write(dxl_ids[i], 64, 1); // torque off
+        }
+    }
+
+    
+    if(Serial.availableForWrite() && print_timer > print_period){
+        print_timer = 0;
+
+        Serial.print("cur_tot: ");
+        Serial.println(cur_tot);
+
+        if(motA_nbytes == 7){
+            int32_t cont_angle = pad28(motA_rx[0], motA_rx[1], motA_rx[2], motA_rx[3]);
+            int16_t rpm = pad14(motA_rx[4], motA_rx[5]);
+            int16_t temp_ntc = pad14(0x0, motA_rx[6]);
+
+            Serial.print("cmd_A: ");
+            Serial.println(cmd.motors[0]);
+            Serial.print("temp_ntc_A: ");
+            Serial.println(temp_ntc);
+        }else{
+            // Serial.println(motA_nbytes);
+            // for(int i = 0; i < motA_nbytes; i++){
+            //     Serial.println(motA_rx[i]);
+            // }
+        }
+
+        if(motB_nbytes == 7){
+            int32_t cont_angle = pad28(motB_rx[0], motB_rx[1], motB_rx[2], motB_rx[3]);
+            int16_t rpm = pad14(motB_rx[4], motB_rx[5]);
+            int16_t temp_ntc = pad14(0x0, motB_rx[6]);
+
+            Serial.print("cmd_B: ");
+            Serial.println(cmd.motors[1]);
+            Serial.print("temp_ntc_B: ");
+            Serial.println(temp_ntc);
+        }else{
+        }
+
         Serial.println('\t');
     }
-    
-    recv_bytes = send_O32_cmd(0xB, CMD_SET_VOLTAGE, twoscomplement14(cmd.motors[1]), motor3_response);
-    delay(10);
 
-    // if(Serial.availableForWrite()){
-    //     Serial.print("3numread: ");
-    //     Serial.println(recv_bytes);
-    //     for(int i = 0; i < recv_bytes; i++){
-    //         Serial.println(motor3_response[i]);
-    //     }
-    //     Serial.println('\t');
-    // }
-
-    if (count < 10) {
-        dxl_write(2, 116, 1);
-        digitalWrite(LED_BUILTIN, LED_LIT);
-    } else {
-        dxl_write(2, 116, 2048);
-        digitalWrite(LED_BUILTIN, LED_UNLIT);
-    }
-    count = (count + 1) % 20;
 }
+
+
+
+
+
+
+
 
 uint8_t send_O32_cmd(uint8_t addr, uint8_t CMD_TYPE, uint16_t data, uint8_t *rx) {
     while (rs485_0.available()) rs485_0.read(); // clear rx buffer
@@ -197,8 +238,9 @@ uint8_t send_O32_cmd(uint8_t addr, uint8_t CMD_TYPE, uint16_t data, uint8_t *rx)
 
     rs485_0.write(uart2_TX, 3);
     rs485_0.flush();
-    delayMicroseconds(200);
-    uint8_t numread = rs485_0.readBytesUntil(MIN_INT8, rx, 10);
+    delayMicroseconds(200); //should be enough for up to 20 bytes of response at 1Mbaud
+    // uint8_t numread = rs485_0.readBytesUntil(MIN_INT8, rx, 10);
+    uint8_t numread = rs485_0.readBytes(rx, 7);
     return numread;
 }
 
