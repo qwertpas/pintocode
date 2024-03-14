@@ -76,7 +76,7 @@ void loop() {
 
 //    esp_now_send(recv_addr, (uint8_t *)&myData, sizeof(myData));
     for (uint8_t i = 0; i < num_recv; i++) {
-      esp_now_add_peer(recv_addrs[i], ESP_NOW_ROLE_SLAVE, 1, NULL, 0);
+      esp_now_send(recv_addrs[i], (uint8_t *)&myData, sizeof(myData));
     }
    
   }else{

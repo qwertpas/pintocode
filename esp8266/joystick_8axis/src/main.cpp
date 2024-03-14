@@ -8,9 +8,7 @@ typedef struct __attribute__((packed)) {
 } MyData;
 
 
-uint8_t recv_addr[] = {0x30, 0x30, 0xF9, 0x34, 0x57, 0x28}; //esp32s3 xiao pcb brain 
-
-uint8_t WHICH_ADDR = 2; //<-- multiple receivers makes it crash, change this to choose which
+uint8_t WHICH_ADDR = 1; //<-- multiple receivers makes it crash, change this to choose which
 uint8_t recv_addrs[][6] = {
     {0xC8, 0xC9, 0xA3, 0x56, 0x98, 0x6F}, // jank brain (esp8266)
     {0x30, 0x30, 0xF9, 0x34, 0x57, 0x28}, // squirrelbrain 1 (esp32s3)
