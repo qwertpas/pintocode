@@ -8,8 +8,16 @@ typedef struct __attribute__((packed)) {
 } MyData;
 
 //uint8_t recv_addr[] = {0xC8, 0xC9, 0xA3, 0x56, 0x98, 0x6F}; //esp8266 first brain
-uint8_t recv_addr[] = {0x30, 0x30, 0xF9, 0x34, 0x57, 0x28}; //esp32s3 xiao pcb brain 
+//uint8_t recv_addr[] = {0x30, 0x30, 0xF9, 0x34, 0x57, 0x28}; //esp32s3 xiao pcb brain 
 //uint8_t recv_addr[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}; //broadcast all
+
+uint8_t recv_addrs[][6] = {
+    {0xC8, 0xC9, 0xA3, 0x56, 0x98, 0x6F}, // jank brain (esp8266)
+    {0x30, 0x30, 0xF9, 0x34, 0x57, 0x28}, // squirrelbrain 1 (esp32s3)
+    {0x30, 0x30, 0xF9, 0x34, 0x5A, 0x44}, // squirrelbrain 2 (esp32s3)
+    // use FF,FF,... to broadcast all
+};
+uint8_t num_recv = sizeof(recv_addrs) / sizeof(recv_addrs[0]);
 
 
 elapsedMillis led_timer;
@@ -37,7 +45,10 @@ void setup() {
   if(esp_now_init() == 0){
     esp_now_set_self_role(ESP_NOW_ROLE_CONTROLLER);
     esp_now_register_send_cb(OnDataSent);
-    esp_now_add_peer(recv_addr, ESP_NOW_ROLE_SLAVE, 1, NULL, 0);
+//    esp_now_add_peer(recv_addr, ESP_NOW_ROLE_SLAVE, 1, NULL, 0);
+    for (uint8_t i = 0; i < num_recv; i++) {
+      esp_now_add_peer(recv_addrs[i], ESP_NOW_ROLE_SLAVE, 1, NULL, 0);
+    }
   }
 
   pinMode(LED_BUILTIN, OUTPUT);
@@ -63,7 +74,10 @@ void loop() {
     memset(&myData, 0, sizeof(myData));
     serialInput.toCharArray(myData.serialData, sizeof(myData.serialData));
 
-    esp_now_send(recv_addr, (uint8_t *)&myData, sizeof(myData));
+//    esp_now_send(recv_addr, (uint8_t *)&myData, sizeof(myData));
+    for (uint8_t i = 0; i < num_recv; i++) {
+      esp_now_add_peer(recv_addrs[i], ESP_NOW_ROLE_SLAVE, 1, NULL, 0);
+    }
    
   }else{
     blink_period = 1000; //long blink for no input data

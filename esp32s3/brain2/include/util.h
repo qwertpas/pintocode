@@ -41,3 +41,11 @@ int32_t pad28(uint8_t num7_0, uint8_t num7_1, uint8_t num7_2, uint8_t num7_3) {
   if (res & 0x08000000) return res | 0xF0000000;
   else return res;
 }
+
+int32_t min(int32_t a, int32_t b){
+  return (a<b) ? a : b; 
+}
+
+int32_t max(int32_t a, int32_t b){
+  return (a>b) ? a : b; 
+}

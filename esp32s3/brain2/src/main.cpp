@@ -1,5 +1,7 @@
 #include "main.h"
 
+#define DO_CALIB false
+
 #define MOTOR_ON 1
 #define GPIO_D1 2 // breakout GPIO
 #define UART1_DE 3
@@ -33,7 +35,8 @@ uint8_t dxl_ids[] = {
 #define DXL_TX_BUFFER_LENGTH 1024
 unsigned char tx_buffer[DXL_TX_BUFFER_LENGTH];
 
-hw_timer_t *timer0 = NULL;
+hw_timer_t *timer_1khz = NULL; //watchdog
+hw_timer_t *timer_elapsed = NULL; //keeping track of elapsed time
 
 typedef struct cmd_struct {
     uint8_t servos[6];
@@ -70,7 +73,7 @@ void OnDataRecv(const uint8_t *mac, const uint8_t *incomingData, int len) {
     }
 }
 
-void IRAM_ATTR timer0_ISR() { // 1kHz
+void IRAM_ATTR timer_1khz_ISR() { // 1kHz
     recv_watchdog++;
     // Serial.println("timer0");
 }
@@ -112,6 +115,7 @@ void setup() {
     }
     esp_now_register_recv_cb(OnDataRecv);
 
+    delay(1000);
 
     Serial.println("My MAC address:");
     Serial.println(WiFi.macAddress());
@@ -119,18 +123,19 @@ void setup() {
     Serial.println("Turning on motors...");
     digitalWrite(LED_BUILTIN, LED_LIT);
     digitalWrite(MOTOR_ON, HIGH);
-
-    delay(4000);
-
     for(int i=0; i<5; i++){
         dxl_write(dxl_ids[i], 64, 1); // torque on
     }
+    delay(2000); //wait for bldc motors to initialize
 
-    timer0 = timerBegin(0, 80, true);                // 80MHz clock, 80div=1us precision, true=count up
-    timerAttachInterrupt(timer0, &timer0_ISR, true); // true=edgetriggered
-    timerAlarmWrite(timer0, 1000, true);          // microseconds, true=autoreload
-    timerAlarmEnable(timer0);                        // start counting
 
+    timer_1khz = timerBegin(0, 80, true);                // timer index 0, 80MHz clock, 80div=1us precision, true=count up
+    timerAttachInterrupt(timer_1khz, &timer_1khz_ISR, true); // true=edgetriggered
+    timerAlarmWrite(timer_1khz, 1000, true);          // microseconds, true=autoreload
+    timerAlarmEnable(timer_1khz);                        // start counting
+
+    timer_elapsed = timerBegin(1, 80, true); //also 1khz, should be enough because 64bit timer
+    timerStart(timer_elapsed);
 }
 
 float cur_tot = 0.0f; 
@@ -141,13 +146,17 @@ uint8_t motA_nbytes = 0;
 uint8_t motB_rx[12] = {0};
 uint8_t motB_nbytes = 0;
 
-uint8_t calib_state = 1; // 1:moving, 0:done  
+uint8_t calib_state = DO_CALIB ? 1 : 0; // 1:moving, 0:done  
 uint16_t calib_cmd = 100; //motor power (out of 1599) to calibrate with
 uint16_t calib_cur_thres = 800; //milliamps at stall
 int32_t calib_pos_A = 0; // position that motor stalls
 int32_t calib_pos_B = 0;
 
+int32_t pos_A = 0;
+int32_t pos_B = 0;
+
 void loop() {
+    uint32_t elapsed = timerReadMilis(timer_elapsed);
 
     uint32_t sns_adc = analogRead(GPIO_D1); //read current no matter what
     if(sns_adc == 0){
@@ -167,7 +176,7 @@ void loop() {
         return; //skip what comes after
     }
 
-    if(calib_state){ //calibration happens when calib_state != 0
+    if(calib_state && elapsed < 10000){ //calibration happens when calib_state != 0. If it takes more than 10 seconds, continue to operation
         switch (calib_state){
         case 1: //extend A at low power until stall
             motA_nbytes = send_O32_cmd(0xA, CMD_SET_VOLTAGE, twoscomplement14(calib_cmd), motA_rx);
@@ -195,8 +204,10 @@ void loop() {
             break;
         }
 
-        if(print_timer > print_period){
+        if(print_timer > print_period && Serial.availableForWrite()){
             print_timer = 0;
+            Serial.print("elapsed: ");
+            Serial.println(elapsed);
             Serial.print("calib_state: ");
             Serial.println(calib_state);
             Serial.print("cur_tot: ");
@@ -212,23 +223,29 @@ void loop() {
     }
 
     //normal operation
-    motA_nbytes = send_O32_cmd(0xA, CMD_SET_VOLTAGE, twoscomplement14(cmd.motors[0]), motA_rx);
-    motB_nbytes = send_O32_cmd(0xB, CMD_SET_VOLTAGE, twoscomplement14(cmd.motors[1]), motB_rx);
+    int16_t cmd_A = (pos_A > calib_pos_A) ? 0 : cmd.motors[0];
+    int16_t cmd_B = (pos_B > calib_pos_B) ? 0 : cmd.motors[1];
+    motA_nbytes = send_O32_cmd(0xA, CMD_SET_VOLTAGE, twoscomplement14(cmd_A), motA_rx);
+    motB_nbytes = send_O32_cmd(0xB, CMD_SET_VOLTAGE, twoscomplement14(cmd_B), motB_rx);
+
+    pos_A = pad28(motA_rx[0], motA_rx[1], motA_rx[2], motA_rx[3]);
+    pos_B = pad28(motB_rx[0], motB_rx[1], motB_rx[2], motB_rx[3]);
 
     for(int i=0; i<5; i++){
         uint16_t duty = map(cmd.servos[i], 0, 180, 0, 4095); //map 0-180º to 0-4095 for dynamixel position
         dxl_write(dxl_ids[i], 116, duty);
     }
 
-    if(Serial.available()){
-        char inputChar = Serial.read();
-        if(inputChar == 'R'){
-            ESP.restart();
-        }
+    if(Serial.available()){ //restart if first character is 'R' 
+        if(Serial.read() == 'R') ESP.restart();
+        while(Serial.available()) Serial.read();
     }
 
-    if(Serial.availableForWrite() && print_timer > print_period){
+    if(print_timer > print_period && Serial.availableForWrite()){
         print_timer = 0;
+
+        Serial.print("elapsed: ");
+        Serial.println(elapsed);
 
         Serial.print("cur_tot: ");
         Serial.println(cur_tot);
@@ -239,27 +256,25 @@ void loop() {
         Serial.println(calib_pos_B);
 
         if(motA_nbytes == 7){
-            int32_t cont_angle = pad28(motA_rx[0], motA_rx[1], motA_rx[2], motA_rx[3]);
             int16_t rpm = pad14(motA_rx[4], motA_rx[5]);
             int16_t temp_ntc = pad14(0x0, motA_rx[6]);
 
             Serial.print("cmd_A: ");
             Serial.println(cmd.motors[0]);
-            Serial.print("cont_angle_A: ");
-            Serial.println(cont_angle);
+            Serial.print("pos_A: ");
+            Serial.println(pos_A);
             Serial.print("temp_ntc_A: ");
             Serial.println(temp_ntc);
         }
 
         if(motB_nbytes == 7){
-            int32_t cont_angle = pad28(motB_rx[0], motB_rx[1], motB_rx[2], motB_rx[3]);
             int16_t rpm = pad14(motB_rx[4], motB_rx[5]);
             int16_t temp_ntc = pad14(0x0, motB_rx[6]);
 
             Serial.print("cmd_B: ");
             Serial.println(cmd.motors[1]);
-            Serial.print("cont_angle_B: ");
-            Serial.println(cont_angle);
+            Serial.print("pos_B: ");
+            Serial.println(pos_B);
             Serial.print("temp_ntc_B: ");
             Serial.println(temp_ntc);
         }
