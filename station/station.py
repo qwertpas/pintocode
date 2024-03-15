@@ -4,13 +4,14 @@ import pygame
 import os
 import pandas as pd
 from timeit import default_timer as timer
+from periodics import PeriodicSleeper
 
 os.environ['SDL_JOYSTICK_ALLOW_BACKGROUND_EVENTS'] = '1'
 pygame.init()
 screen = pygame.display.set_mode((50, 50))
 
 port = "/dev/cu.usbmodem1101"
-ser = serial.Serial(port, baudrate=115200, timeout=1)
+ser = serial.Serial(port, baudrate=115200, timeout=1, stopbits=serial.STOPBITS_TWO)
 # ports = serial.tools.list_ports.comports()
 
 joysticks = {}
@@ -25,11 +26,11 @@ servos = [0, 1, 2, 3, 4, 5]
 motors = [7, 8]
 
 done = False
-
-
 def main():
 
     traj_rightarm = pd.read_csv("data/rightarm.csv")
+
+    send_handler = PeriodicSleeper(send_to_estop, 0.01)
 
     start_time = timer()
     while not done:
@@ -40,22 +41,23 @@ def main():
 
         (servos[0], servos[1]) = interp(traj_rightarm, elapsed, ['dxl_pos[0]', 'dxl_pos[1]'], speed=1) #maybe use period as parameter instead
 
-        cmd_str = ""
-        for i in range(6):
-            cmd_str += f"s{i}:{int(servos[i])}\n"
-        for i in range(2):
-            cmd_str += f"m{i}:{int(motors[i])}\n"
-        cmd_str += "\t"
-
-        print(cmd_str)
         
-        # if(len(joysticks.values()) > 0):
-        #     print(joysticks.values()['0'])
+        time.sleep(0.01)
+
+    send_handler.stop()
 
 
+def send_to_estop():
+    cmd_str = ""
+    for i in range(6):
+        cmd_str += f"s{i}:{int(servos[i])}\n"
+    for i in range(2):
+        cmd_str += f"m{i}:{int(motors[i])}\n"
+    cmd_str += "#\t"
 
-        ser.write(cmd_str.encode())
-        time.sleep(0.001)
+    print(cmd_str)
+
+    ser.write(cmd_str.encode())
 
 
 def interp(traj_df, elapsed, labels, speed=1):
