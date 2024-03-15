@@ -7,7 +7,7 @@
 
 #define LED_ON 0
 #define LED_OFF 1
-#define estop digitalRead(D8) // 1 is on, 0 is estopped
+#define ESTOPPED (!digitalRead(D8)) // 1 is on, 0 is estopped
 
 typedef struct __attribute__((packed)) {
     char serialData[64]; // Change the size according to your data needs
@@ -22,8 +22,9 @@ uint8_t recv_addrs[][6] = {
 };
 uint8_t num_recv = sizeof(recv_addrs) / sizeof(recv_addrs[0]);
 
-elapsedMillis led_timer;
 elapsedMillis send_timer;
+elapsedMillis recv_timer; //watchdog for serial recv
+elapsedMillis print_timer;
 
 hw_timer_t *blink_timer = NULL;
 
@@ -91,8 +92,14 @@ void IRAM_ATTR blink_timer_ISR() { // 1kHz
 
 void setup() {
     Serial.begin(115200);
+    Serial.setTimeout(1);
+    Serial.setTxTimeoutMs(1);
     pinMode(LED_BUILTIN, OUTPUT);
     digitalWrite(LED_BUILTIN, LED_OFF);
+
+    pinMode(D8, INPUT_PULLDOWN);
+    pinMode(D7, OUTPUT);
+    digitalWrite(D7, HIGH);
 
     WiFi.mode(WIFI_STA);
     delay(1000);
@@ -125,43 +132,67 @@ void setup() {
 void loop() {
 
     packet_ready_flag = false;
-    // while(true){
     if(Serial.available()){
         uint8_t newchar = Serial.read();
         // Serial.print((char) newchar);
         packet[packet_index] = newchar;
         packet_index++;
-        if(newchar == '#'){
+        if(newchar == '\t'){
             packet_ready_flag = true;
 
-            Serial.println("packet ready:");
-            String packet_str = String((char *)packet);
-            Serial.println(packet_str);
+            // memcpy(espnow_tx, packet, packet_index); //save packet into tx buffer
+            // espnow_tx_size = packet_index;
 
-            // break;
+            // memset(packet, 0, sizeof(packet)); //clear packet for next serial receive
+            // packet_index = 0;
+
+            
         }
+
     }
     // }
 
     if(packet_ready_flag){
         packet_ready_flag = false;
 
+        memset(espnow_tx, 0, sizeof(espnow_tx)); //clear espnow_tx
         memcpy(espnow_tx, packet, packet_index);
         espnow_tx_size = packet_index;
 
         memset(packet, 0, packet_index);
         packet_index = 0;
-    }else{
-        timerAlarmWrite(blink_timer, 1000000, true); //microseconds
+
+        if(Serial.availableForWrite()){
+            if(ESTOPPED) Serial.println("~~~~ESTOPPED~~~~~");
+            Serial.println("espnow_tx:");
+            Serial.println((char *)espnow_tx);
+            Serial.println(espnow_tx_size);
+        }
+
+        recv_timer = 0;
+    }else if (recv_timer > 100){ //if it's been more than 100ms since last recv, long blink 
+        recv_timer = 101;
+        timerAlarmWrite(blink_timer, 1000*1000, true); //microseconds
         led_solid = false;
+
+        if(print_timer > 1000){
+            print_timer = 0;
+            Serial.println("not receiving station");
+            Serial.print("Estopped: ");
+            Serial.println(ESTOPPED);
+        }
+        return;
     }
 
     if(send_timer > 10){
         send_timer = 0;
+        if(ESTOPPED){
+            timerAlarmWrite(blink_timer, 100*1000, true); //microseconds
+            led_solid = false;
+            return;
+        }
         if(espnow_tx_size > 0){
             esp_now_send(recv_addrs[1], espnow_tx, espnow_tx_size); //don't read return message here, often no_mem errror
         }
-        
     }
-
 }

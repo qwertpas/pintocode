@@ -61,6 +61,7 @@ uint8_t enable_motors_flag = 0;
 uint8_t disable_motors_flag = 0;
 
 String receivedString = "";
+String recv_vars = "";
 
 
 //function declarations
@@ -72,24 +73,43 @@ void dxl_syncread(uint32_t reg_addr, uint32_t value, uint8_t *rx);
 uint16_t update_crc(uint16_t crc_accum, uint8_t *data_blk_ptr, uint16_t data_blk_size);
 
 
+const String servolabels[] = {"s0", "s1", "s2"}; 
+void OnDataRecv(const uint8_t *mac, const uint8_t *incomingData, int len) { //len should not be longer than 250bytes
+    // uint8_t lineend = (uint8_t) (strchr((const char*)incomingData, '\n') - (const char*)incomingData); //index of first '\n'
+    // char line[250] = "";
 
-void OnDataRecv(const uint8_t *mac, const uint8_t *incomingData, int len) {
+    // mem
+
+    // uint8_t linenum = 0;
+    // for(uint8_t i=0; i<len; i++){
+    //     incomingData[i];
+    //     sscanf((char*)incomingData[i], "%c%d:%d\n", &motor_type, &index, &val) == 3
+    // }
+
+    // char str[250] = {0};
+
+    // char* str = ;
+    // memcpy(str, recv_str, len);
+
+
     receivedString = String((char *)incomingData);
-    char motor_type;
-    int index, val;
-    if (sscanf(receivedString.c_str(), "%c%d:%d", &motor_type, &index, &val) == 3) {
-        if (motor_type == 's' && index < 6) {
-            cmd.servos[index] = val;
-        }
-        if (motor_type == 'm' && index < 2) {
-            cmd.motors[index] = val;
-        }
 
+    //stupid way to read recieved string but oh well gotta go fast
+    cmd.servos[0] = receivedString.substring(receivedString.indexOf("s0") + 3, receivedString.indexOf("s0") + 8).toInt();
+    cmd.servos[1] = receivedString.substring(receivedString.indexOf("s1") + 3, receivedString.indexOf("s1") + 8).toInt();
+    cmd.servos[2] = receivedString.substring(receivedString.indexOf("s2") + 3, receivedString.indexOf("s2") + 8).toInt();
+    cmd.servos[3] = receivedString.substring(receivedString.indexOf("s3") + 3, receivedString.indexOf("s3") + 8).toInt();
+    cmd.servos[4] = receivedString.substring(receivedString.indexOf("s4") + 3, receivedString.indexOf("s4") + 8).toInt();
+    cmd.motors[0] = receivedString.substring(receivedString.indexOf("m0") + 3, receivedString.indexOf("m0") + 8).toInt();
+    cmd.motors[1] = receivedString.substring(receivedString.indexOf("m1") + 3, receivedString.indexOf("m1") + 8).toInt();
+
+    if(receivedString.indexOf("s0") != -1){ //data exists
         if (recv_watchdog > 100) {
             enable_motors_flag = 1;
         }
         recv_watchdog = 0;
     }
+
 }
 
 void IRAM_ATTR timer_1khz_ISR() { // 1kHz
@@ -126,7 +146,6 @@ void setup() {
     dxl_serial.setPins(UART2_RX, UART2_TX, -1, UART2_DE); // CTS pin should be an unused GPIO, otherwise USB serial disappears
     dxl_serial.setMode(UART_MODE_RS485_HALF_DUPLEX);
     dxl_serial.setTimeout(1);
-    // dxl_serial.setRxInvert(true);
 
 
     WiFi.mode(WIFI_MODE_STA);
@@ -187,12 +206,14 @@ void loop() {
     }
 
     if (recv_watchdog > 100) { // didn't receive anything from joystick in a while
-        cmd_struct cmd = {0};
+        cmd = {0};
         motA_nbytes = send_O32_cmd(0xA, CMD_SET_VOLTAGE, 0, motA_rx);
         motB_nbytes = send_O32_cmd(0xB, CMD_SET_VOLTAGE, 0, motB_rx);
         dxl_disable();
-        if (Serial.availableForWrite())
-            Serial.println("not receiving joystick");
+        if (Serial.availableForWrite() && print_timer > 100){
+            print_timer = 0;
+            Serial.println("not receiving joystick \t");
+        }
         return; // skip what comes after
     }
     
@@ -327,8 +348,6 @@ void loop() {
             // "calib_pos_A: %ld\n"
             // "calib_pos_B: %ld\n"
 
-            "recv: %s\n"
-
             "servos[0]: %ld\n"
             "servos[1]: %ld\n"
             "servos[2]: %ld\n"
@@ -346,7 +365,6 @@ void loop() {
             // cur_tot,
             // calib_pos_A,
             // calib_pos_B,
-            receivedString,
 
             cmd.servos[0],
             cmd.servos[1],

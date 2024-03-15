@@ -11,7 +11,7 @@ pygame.init()
 screen = pygame.display.set_mode((50, 50))
 
 port = "/dev/cu.usbmodem1101"
-ser = serial.Serial(port, baudrate=115200, timeout=1, stopbits=serial.STOPBITS_TWO)
+ser = None
 # ports = serial.tools.list_ports.comports()
 
 joysticks = {}
@@ -27,6 +27,9 @@ motors = [7, 8]
 
 done = False
 def main():
+    global ser
+
+
 
     traj_rightarm = pd.read_csv("data/rightarm.csv")
 
@@ -34,6 +37,14 @@ def main():
 
     start_time = timer()
     while not done:
+
+        while(ser is None):
+            try:
+                ser = serial.Serial(port, baudrate=115200, timeout=1, stopbits=serial.STOPBITS_TWO)
+            except:
+                ser = None
+                print("plug in estop pls")
+                time.sleep(0.1)
         
         elapsed = (timer() - start_time) * 1000
 
@@ -48,16 +59,24 @@ def main():
 
 
 def send_to_estop():
+    global ser
+    if(ser is None):
+        return
+
     cmd_str = ""
     for i in range(6):
-        cmd_str += f"s{i}:{int(servos[i])}\n"
+        cmd_str += f"s{i}:{int(servos[i]):05}\n"
     for i in range(2):
-        cmd_str += f"m{i}:{int(motors[i])}\n"
+        cmd_str += f"m{i}:{int(motors[i]):05}\n"
     cmd_str += "#\t"
 
     print(cmd_str)
 
-    ser.write(cmd_str.encode())
+    try:
+        ser.write(cmd_str.encode())
+    except:
+        ser = None
+        print("Estop disconnected")
 
 
 def interp(traj_df, elapsed, labels, speed=1):
