@@ -70,6 +70,7 @@ void dxl_enable();
 void dxl_disable();
 void dxl_write(uint8_t id, uint32_t reg_addr, uint32_t value);
 void dxl_syncread(uint32_t reg_addr, uint32_t value, uint8_t *rx);
+void dxl_syncwrite(uint32_t reg_addr, uint8_t bytes_to_write, uint32_t* data);
 uint16_t update_crc(uint16_t crc_accum, uint8_t *data_blk_ptr, uint16_t data_blk_size);
 
 
@@ -209,7 +210,8 @@ void loop() {
         cmd = {0};
         motA_nbytes = send_O32_cmd(0xA, CMD_SET_VOLTAGE, 0, motA_rx);
         motB_nbytes = send_O32_cmd(0xB, CMD_SET_VOLTAGE, 0, motB_rx);
-        dxl_disable();
+        // dxl_disable();
+        dxl_enable();
         if (Serial.availableForWrite() && print_timer > 100){
             print_timer = 0;
             Serial.println("not receiving joystick \t");
@@ -286,12 +288,14 @@ void loop() {
     //     dxl_write(dxl_ids[i], 116, duty);
     //     // delayMicroseconds(300);
     // }
-    dxl_syncread(0x0084, 4, dxl_rx);
-    for(uint8_t i=0; i<5; i++){
-        if(dxl_rx[15*i + 7] == 0x55){ //check if it's a return status packet
-            state.dxl_pos[i] = (dxl_rx[15*i + 10] << 8) + dxl_rx[15*i + 9]; 
-        }
-    }
+
+
+    // dxl_syncread(0x0084, 4, dxl_rx);
+    // for(uint8_t i=0; i<5; i++){
+    //     if(dxl_rx[15*i + 7] == 0x55){ //check if it's a return status packet
+    //         state.dxl_pos[i] = (dxl_rx[15*i + 10] << 8) + dxl_rx[15*i + 9]; 
+    //     }
+    // }
 
     if (Serial.available()) { // restart if first character is 'R'
         char user_cmd = Serial.read();
@@ -404,6 +408,8 @@ void dxl_enable(){
     for (int i = 0; i < 5; i++) {
         dxl_write(dxl_ids[i], 64, 1); // servos torque on
     }
+    // uint32_t data[5] = {1,1,1,1,1};
+    // dxl_syncwrite(64, 4, data);
     state.dxl_on = true;
 }
 void dxl_disable(){
@@ -432,7 +438,7 @@ void dxl_write(uint8_t id, uint32_t reg_addr, uint32_t value) {
     dxl_tx[12] = (uint8_t)((value >> 16) & 0x00FF); // data 2
     dxl_tx[13] = (uint8_t)((value >> 24) & 0x00FF); // data 3 MSB
 
-    uint16_t CRC = update_crc(0, dxl_tx, 14);            // 12 = 5 + Packet Length(7)
+    uint16_t CRC = update_crc(0, dxl_tx, 14);            // number of bytes until now including header
     uint8_t CRC_L = (uint8_t)(CRC & 0x00FF); // Little-endian
     uint8_t CRC_H = (uint8_t)((CRC >> 8) & 0x00FF);
 
@@ -485,7 +491,42 @@ void dxl_syncread(uint32_t reg_addr, uint32_t bytes_to_read, uint8_t* rx) { //re
 }
 
 
-void dxl_read() {
+void dxl_syncwrite(uint32_t reg_addr, uint8_t bytes_to_write, uint32_t* data) { //bytes_to_write max 4 bytes because data is 32bit
+    dxl_tx[0] = 0xFF; // header
+    dxl_tx[1] = 0xFF; // header
+    dxl_tx[2] = 0xFD; // header
+    dxl_tx[3] = 0x00; // reserved
+    dxl_tx[4] = 0xFE; // ID: broadcast
+
+    uint8_t param_len = sizeof(dxl_ids) * (bytes_to_write + 1);
+
+    dxl_tx[5] = (param_len + 7); // length L (length of instruction, parameters, and crc)
+    dxl_tx[6] = 0x00; // length H
+
+    dxl_tx[7] = 0x83; // instruction (write)
+
+    dxl_tx[8] = (uint8_t)(reg_addr & 0x00FF);        // P1: register address L
+    dxl_tx[9] = (uint8_t)((reg_addr >> 8) & 0x00FF); // P2: register address H
+
+    dxl_tx[10] = (uint8_t)(bytes_to_write & 0x00FF);         // P3: num bytes L
+    dxl_tx[11] = (uint8_t)((bytes_to_write >> 8) & 0x00FF);  // P4: num bytes H
+
+    for(uint8_t i=0; i<sizeof(dxl_ids); i++){
+        dxl_tx[12 + i*(bytes_to_write+1)] = (uint8_t)(dxl_ids[i] & 0x00FF);  // P5: target device ID
+        for(uint8_t j=0; j<bytes_to_write; j++){
+            dxl_tx[13 + i*(bytes_to_write+1) + j] = (uint8_t)((data[i]>>(j*8)) & 0x00FF);  // P6: target device ID
+        }
+    }
+
+    uint16_t CRC = update_crc(0, dxl_tx, param_len + 12);            // number of bytes until now including header
+    uint8_t CRC_L = (uint8_t)(CRC & 0x00FF); // Little-endian
+    uint8_t CRC_H = (uint8_t)((CRC >> 8) & 0x00FF);
+
+    dxl_tx[param_len + 12] = CRC_L;
+    dxl_tx[param_len + 13] = CRC_H;
+
+    dxl_serial.write(dxl_tx, param_len+14);
+    delayMicroseconds(500);
 }
 
 uint16_t update_crc(uint16_t crc_accum, uint8_t *data_blk_ptr, uint16_t data_blk_size) {
