@@ -41,7 +41,7 @@ hw_timer_t *timer_1khz = NULL;    // watchdog
 hw_timer_t *timer_elapsed = NULL; // keeping track of elapsed time
 
 typedef struct cmd_struct {
-    uint8_t servos[6];
+    uint16_t servos[6];
     int16_t motors[2];
 } cmd_struct;
 cmd_struct cmd = {0};
@@ -60,6 +60,8 @@ uint16_t print_period = 10;
 uint8_t enable_motors_flag = 0;
 uint8_t disable_motors_flag = 0;
 
+String receivedString = "";
+
 
 //function declarations
 uint8_t send_O32_cmd(uint8_t addr, uint8_t CMD_TYPE, uint16_t data, uint8_t *rx);
@@ -72,7 +74,7 @@ uint16_t update_crc(uint16_t crc_accum, uint8_t *data_blk_ptr, uint16_t data_blk
 
 
 void OnDataRecv(const uint8_t *mac, const uint8_t *incomingData, int len) {
-    String receivedString = String((char *)incomingData);
+    receivedString = String((char *)incomingData);
     char motor_type;
     int index, val;
     if (sscanf(receivedString.c_str(), "%c%d:%d", &motor_type, &index, &val) == 3) {
@@ -324,6 +326,15 @@ void loop() {
             // "cur_tot: %f\n"
             // "calib_pos_A: %ld\n"
             // "calib_pos_B: %ld\n"
+
+            "recv: %s\n"
+
+            "servos[0]: %ld\n"
+            "servos[1]: %ld\n"
+            "servos[2]: %ld\n"
+            "servos[3]: %ld\n"
+            "servos[4]: %ld\n"
+            
             "dxl_pos[0]: %ld\n"
             "dxl_pos[1]: %ld\n"
             "dxl_pos[2]: %ld\n"
@@ -335,6 +346,14 @@ void loop() {
             // cur_tot,
             // calib_pos_A,
             // calib_pos_B,
+            receivedString,
+
+            cmd.servos[0],
+            cmd.servos[1],
+            cmd.servos[2],
+            cmd.servos[3],
+            cmd.servos[4],
+
             state.dxl_pos[0],
             state.dxl_pos[1],
             state.dxl_pos[2],
