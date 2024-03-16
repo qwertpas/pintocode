@@ -54,7 +54,8 @@ def main():
         [servos[0], servos[1]] = interp(traj_rightarm, elapsed, ['dxl_pos[0]', 'dxl_pos[1]'], speed=2) #maybe use period as parameter instead
         [servos[3], servos[2]] = np.array([4095, 4095]) - interp(traj_rightarm, elapsed, ['dxl_pos[0]', 'dxl_pos[1]'], speed=2, phase_shift=0)
 
-        recv_from_estop()
+        if(ser is not None):
+            recv_from_estop()
         
         time.sleep(0.01)
 
@@ -93,30 +94,30 @@ def recv_from_estop():
 
     messagecount = 0
 
-    if ser.in_waiting > 0:
-        try:
+    try:
+        if ser.in_waiting > 0:
             uarttext = ser.read_all().decode('utf-8', errors='ignore')
-        except Exception as e:
-            print(e)
-            return
+            
+            ending=0
+            while(uarttext):
+                ending = uarttext.find(delimiter)
+                if(ending == -1):
+                    break
 
-        ending=0
-        while(uarttext):
-            ending = uarttext.find(delimiter)
-            if(ending == -1):
-                break
+                message += uarttext[0:ending]
+                print(message)
+                print("_—————____—————____—————____—————____—————____—————___")
+                messagebuffer = message
 
-            message += uarttext[0:ending]
-            print(message)
-            print("_—————____—————____—————____—————____—————____—————___")
-            messagebuffer = message
+                messagecount += 1
 
-            messagecount += 1
+                message = "" #clear message
+                uarttext = uarttext[ending+len(delimiter):] #front of buffer used up
 
-            message = "" #clear message
-            uarttext = uarttext[ending+len(delimiter):] #front of buffer used up
-
-        message = uarttext #whatver is left over
+            message = uarttext #whatver is left over
+    except Exception as e:
+        print(e)
+        return
 
 
 def interp(traj_df, elapsed, labels, speed=1, phase_shift=0):

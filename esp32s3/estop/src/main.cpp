@@ -52,12 +52,43 @@ String receivedString = "";
 
 void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
     espnow_ok = (status == ESP_OK);
+
+    if (!espnow_ok) {
+        Serial.println("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~");
+        switch (status) {
+        case ESP_OK:
+            Serial.println("ok");
+            break;
+        case ESP_ERR_ESPNOW_NOT_INIT:
+            Serial.println("NOT_INIT");
+            break;
+        case ESP_ERR_ESPNOW_ARG:
+            Serial.println("ARG");
+            break;
+        case ESP_ERR_ESPNOW_INTERNAL:
+            Serial.println("INTERNAL");
+            break;
+        case ESP_ERR_ESPNOW_NO_MEM:
+            Serial.println("NO_MEM");
+            break;
+        case ESP_ERR_ESPNOW_NOT_FOUND:
+            Serial.println("NOT_FOUND");
+            break;
+        case ESP_ERR_ESPNOW_IF:
+            Serial.println("IF");
+            break;
+        default:
+            Serial.println("some other error");
+            Serial.println((int)status);
+            break;
+        }
+    }
 }
 
 void OnDataRecv(const uint8_t *mac, const uint8_t *incomingData, int len) {
-    // espnow_rx = String((char *)incomingData).c_str();   
-    memcpy(espnow_rx, incomingData, len);   
-    // espnow_rx = 
+    // espnow_rx = String((char *)incomingData).c_str();
+    memcpy(espnow_rx, incomingData, len);
+    // espnow_rx =
 
     // memcpy(espnow_rx, incomingData, sizeof(espnow_rx));
     // espnow_rx[0] = (uint8_t) (timerRead(blink_timer));
@@ -108,7 +139,7 @@ void setup() {
 
     blink_timer = timerBegin(0, 80, true);                     // timer index 0, 80MHz clock, 80div=1us precision, true=count up
     timerAttachInterrupt(blink_timer, &blink_timer_ISR, true); // true=edgetriggered
-    timerAlarmWrite(blink_timer, 50*1000, true);               // microseconds, true=autoreload
+    timerAlarmWrite(blink_timer, 50 * 1000, true);             // microseconds, true=autoreload
     timerAlarmEnable(blink_timer);                             // start counting
 
     Serial.println("Finished setup");
@@ -183,24 +214,22 @@ void loop() {
         station_ok = false;
     }
 
-
     if (send_timer > 10 && espnow_tx_size > 0 && station_ok && !ESTOPPED) {
         send_timer = 0;
         esp_now_send(send_to_addrs[1], espnow_tx, espnow_tx_size); // don't read return message here, often no_mem errror
+        // espnow_tx_size = 0;
     }
 
-
-    
-    if(ESTOPPED){
+    if (ESTOPPED) {
         timerAlarmWrite(blink_timer, 500 * 1000, true); // slow blink is Estop pressed
         led_solid = false;
-    }else if(!station_ok){
+    } else if (!station_ok) {
         timerAlarmWrite(blink_timer, 200 * 1000, true); // fast blink indicates station disconnected
         led_solid = false;
-    }else if(!espnow_ok){
+    } else if (!espnow_ok) {
         timerAlarmWrite(blink_timer, 100 * 1000, true); // extra fast blink indicates ESP-NOW error
         led_solid = false;
-    }else{ //normal operation
+    } else { // normal operation
         led_solid = true;
     }
 }
