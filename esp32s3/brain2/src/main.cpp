@@ -20,6 +20,8 @@
 #define GPIO34_UNUSED 34
 #define GPIO35_UNUSED 35
 
+uint8_t estop_mac_addr[] = {0x30, 0x30, 0xF9, 0x34, 0x52, 0xA0};
+
 HardwareSerial rs485_0(0);    // RS485 bus 0
 HardwareSerial rs485_1(1);    // RS485 bus 1
 HardwareSerial dxl_serial(2); // dynamixel TTL bus
@@ -32,7 +34,7 @@ uint8_t dxl_ids[] = {
     7  // roll
 };
 
-//communication buffers
+// communication buffers
 uint8_t dxl_tx[100];
 uint8_t dxl_rx[100];
 char print_buf[1024];
@@ -49,13 +51,27 @@ cmd_struct cmd;
 typedef struct state_struct {
     uint8_t dxl_on;
     uint16_t dxl_pos[5];
+    uint16_t vbus;
+    uint32_t elapsed;
+    float cur_tot;
 } state_struct;
 state_struct state = {0};
+
+char state_str[1024];
+
+// typedef struct telemetry_struct {
+//     float vbus;
+//     float hum;
+//     float pres;
+// } telemetry_struct;
+// telemetry_struct telemetry = {0};
 
 uint32_t recv_watchdog = 0;
 
 elapsedMillis print_timer;
 uint16_t print_period = 10;
+
+elapsedMillis telemetry_timer;
 
 uint8_t enable_motors_flag = 0;
 uint8_t disable_motors_flag = 0;
@@ -63,40 +79,20 @@ uint8_t disable_motors_flag = 0;
 String receivedString = "";
 String recv_vars = "";
 
-
-//function declarations
+// function declarations
 void reset_cmd(cmd_struct _cmd);
 uint8_t send_O32_cmd(uint8_t addr, uint8_t CMD_TYPE, uint16_t data, uint8_t *rx);
 void dxl_enable();
 void dxl_disable();
 void dxl_write(uint8_t id, uint32_t reg_addr, uint32_t value);
 void dxl_syncread(uint32_t reg_addr, uint32_t value, uint8_t *rx);
-void dxl_syncwrite(uint32_t reg_addr, uint8_t bytes_to_write, uint32_t* data);
+void dxl_syncwrite(uint32_t reg_addr, uint8_t bytes_to_write, uint32_t *data);
 uint16_t update_crc(uint16_t crc_accum, uint8_t *data_blk_ptr, uint16_t data_blk_size);
 
-
-const String servolabels[] = {"s0", "s1", "s2"}; 
-void OnDataRecv(const uint8_t *mac, const uint8_t *incomingData, int len) { //len should not be longer than 250bytes
-    // uint8_t lineend = (uint8_t) (strchr((const char*)incomingData, '\n') - (const char*)incomingData); //index of first '\n'
-    // char line[250] = "";
-
-    // mem
-
-    // uint8_t linenum = 0;
-    // for(uint8_t i=0; i<len; i++){
-    //     incomingData[i];
-    //     sscanf((char*)incomingData[i], "%c%d:%d\n", &motor_type, &index, &val) == 3
-    // }
-
-    // char str[250] = {0};
-
-    // char* str = ;
-    // memcpy(str, recv_str, len);
-
-
+const String servolabels[] = {"s0", "s1", "s2"};
+void OnDataRecv(const uint8_t *mac, const uint8_t *incomingData, int len) { // len should not be longer than 250bytes
+    // stupid way to read recieved string but oh well gotta go fast
     receivedString = String((char *)incomingData);
-
-    //stupid way to read recieved string but oh well gotta go fast
     cmd.servos[0] = receivedString.substring(receivedString.indexOf("s0") + 3, receivedString.indexOf("s0") + 8).toInt();
     cmd.servos[1] = receivedString.substring(receivedString.indexOf("s1") + 3, receivedString.indexOf("s1") + 8).toInt();
     cmd.servos[2] = receivedString.substring(receivedString.indexOf("s2") + 3, receivedString.indexOf("s2") + 8).toInt();
@@ -105,21 +101,22 @@ void OnDataRecv(const uint8_t *mac, const uint8_t *incomingData, int len) { //le
     cmd.motors[0] = receivedString.substring(receivedString.indexOf("m0") + 3, receivedString.indexOf("m0") + 8).toInt();
     cmd.motors[1] = receivedString.substring(receivedString.indexOf("m1") + 3, receivedString.indexOf("m1") + 8).toInt();
 
-    if(receivedString.indexOf("s0") != -1){ //data exists
+    if (receivedString.indexOf("s0") != -1) { // data exists
         if (recv_watchdog > 100) {
             enable_motors_flag = 1;
         }
         recv_watchdog = 0;
     }
+}
 
+void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
+    // Serial.print("\r\nLast Packet Send Status:\t");
+    // Serial.println(status == ESP_NOW_SEND_SUCCESS ? "Delivery Success" : "Delivery Fail");
 }
 
 void IRAM_ATTR timer_1khz_ISR() { // 1kHz
     recv_watchdog++;
-    // Serial.println("timer0");
 }
-
-
 
 void setup() {
     pinMode(LED_BUILTIN, OUTPUT);
@@ -149,7 +146,6 @@ void setup() {
     dxl_serial.setMode(UART_MODE_RS485_HALF_DUPLEX);
     dxl_serial.setTimeout(1);
 
-
     WiFi.mode(WIFI_MODE_STA);
     Serial.println(WiFi.macAddress());
     if (esp_now_init() != ESP_OK) {
@@ -157,7 +153,16 @@ void setup() {
         delay(3000);
         ESP.restart();
     }
+
     esp_now_register_recv_cb(OnDataRecv);
+    esp_now_register_send_cb(OnDataSent);
+
+    esp_now_peer_info_t peerInfo = {};
+    memcpy(peerInfo.peer_addr, estop_mac_addr, 6);
+    peerInfo.channel = 0;
+    peerInfo.encrypt = false;
+    esp_now_add_peer(&peerInfo);
+
 
     delay(1000);
 
@@ -200,6 +205,7 @@ int32_t pos_B = 0;
 
 void loop() {
     uint32_t elapsed = timerReadMilis(timer_elapsed);
+    state.elapsed = elapsed;
 
     uint32_t sns_adc = analogRead(GPIO_D1); // read current no matter what
     if (sns_adc == 0) {
@@ -207,19 +213,48 @@ void loop() {
     } else {
         cur_tot = alpha_cur_tot * (sns_adc * 11.224f + 222.865f) + (1 - alpha_cur_tot) * cur_tot;
     }
+    state.cur_tot = cur_tot;
+
+    if(telemetry_timer > 10){ //some telemetry will be from the last cycle
+        telemetry_timer = 0;
+
+        size_t state_str_size = sprintf(state_str,
+            "dxl_on:%d\n"
+            "dxl_pos[0]:%d\n"
+            "dxl_pos[1]:%d\n"
+            "dxl_pos[2]:%d\n"
+            "dxl_pos[3]:%d\n"
+            "dxl_pos[4]:%d\n"
+            "vbus:%d\n"
+            "elapsed:%d\n"
+            "cur_tot:%d\n"
+            ,
+            state.dxl_on,
+            state.dxl_pos[0],
+            state.dxl_pos[1],
+            state.dxl_pos[2],
+            state.dxl_pos[3],
+            state.dxl_pos[4],
+            state.vbus,
+            state.elapsed,
+            state.cur_tot
+        );
+        esp_now_send(estop_mac_addr, (uint8_t *) state_str, state_str_size);
+    }
 
     if (recv_watchdog > 100) { // didn't receive anything from joystick in a while
         reset_cmd(cmd);
         motA_nbytes = send_O32_cmd(0xA, CMD_SET_VOLTAGE, 0, motA_rx);
         motB_nbytes = send_O32_cmd(0xB, CMD_SET_VOLTAGE, 0, motB_rx);
         dxl_disable();
-        if (Serial.availableForWrite() && print_timer > 100){
+        if (Serial.availableForWrite() && print_timer > 100) {
             print_timer = 0;
-            Serial.println("not receiving joystick \t");
+            Serial.println("not receiving joystick, state: \t");
+            Serial.println(state_str);
         }
         return; // skip what comes after
     }
-    
+
     if (enable_motors_flag) {
         enable_motors_flag = 0;
         delay(100);
@@ -257,7 +292,6 @@ void loop() {
         if (print_timer > print_period && Serial.availableForWrite()) {
             print_timer = 0;
 
-
             Serial.print("elapsed: ");
             Serial.println(elapsed);
             Serial.print("calib_state: ");
@@ -290,21 +324,23 @@ void loop() {
     dxl_write(dxl_ids[4], 116, cmd.servos[4]);
 
     dxl_syncread(0x0084, 4, dxl_rx);
-    for(uint8_t i=0; i<5; i++){
-        if(dxl_rx[15*i + 7] == 0x55){ //check if it's a return status packet
-            state.dxl_pos[i] = (dxl_rx[15*i + 10] << 8) + dxl_rx[15*i + 9]; 
+    for (uint8_t i = 0; i < 5; i++) {
+        if (dxl_rx[15 * i + 7] == 0x55) { // check if it's a return status packet
+            state.dxl_pos[i] = (dxl_rx[15 * i + 10] << 8) + dxl_rx[15 * i + 9];
         }
     }
 
     if (Serial.available()) { // restart if first character is 'R'
         char user_cmd = Serial.read();
-        switch (user_cmd){
+        switch (user_cmd) {
         case 'm':
-            if(state.dxl_on) dxl_disable();
-            else dxl_enable();
+            if (state.dxl_on)
+                dxl_disable();
+            else
+                dxl_enable();
             break;
         case 'r':
-            timerWrite(timer_elapsed, 0); //reset elapsed time
+            timerWrite(timer_elapsed, 0); // reset elapsed time
             break;
         case 'R':
             ESP.restart();
@@ -345,7 +381,7 @@ void loop() {
         }
 
         sprintf(
-            print_buf, 
+            print_buf,
             "elapsed: %ld\n"
             // "cur_tot: %f\n"
             // "calib_pos_A: %ld\n"
@@ -356,7 +392,7 @@ void loop() {
             "servos[2]: %ld\n"
             "servos[3]: %ld\n"
             "servos[4]: %ld\n"
-            
+
             "dxl_pos[0]: %ld\n"
             "dxl_pos[1]: %ld\n"
             "dxl_pos[2]: %ld\n"
@@ -364,7 +400,7 @@ void loop() {
             "dxl_pos[4]: %ld\n"
             "dxl_on: %ld\t\n",
 
-            elapsed, 
+            elapsed,
             // cur_tot,
             // calib_pos_A,
             // calib_pos_B,
@@ -380,15 +416,15 @@ void loop() {
             state.dxl_pos[2],
             state.dxl_pos[3],
             state.dxl_pos[4],
-            state.dxl_on
-        );
+            state.dxl_on);
         Serial.write(print_buf);
     }
+
+
+    
 }
 
-
-
-void reset_cmd(cmd_struct _cmd){
+void reset_cmd(cmd_struct _cmd) {
     _cmd.servos[0] = 2048;
     _cmd.servos[1] = 2048;
     _cmd.servos[2] = 2048;
@@ -410,12 +446,12 @@ uint8_t send_O32_cmd(uint8_t addr, uint8_t CMD_TYPE, uint16_t data, uint8_t *rx)
     rs485_0.write(uart2_TX, 3);
     rs485_0.flush();
     delayMicroseconds(200); // should be enough for up to 20 bytes of response at 1Mbaud
-    // uint8_t numread = rs485_0.readBytesUntil(MIN_INT8, rx, 10);
+    // uint8_t numread = rs485_0.readBytesUntil(MIN_INT8, rx, 10); //don't use because data itself might contain MIN_INT8
     uint8_t numread = rs485_0.readBytes(rx, 7);
     return numread;
 }
 
-void dxl_enable(){
+void dxl_enable() {
     for (int i = 0; i < 5; i++) {
         dxl_write(dxl_ids[i], 64, 1); // servos torque on
     }
@@ -423,7 +459,7 @@ void dxl_enable(){
     // dxl_syncwrite(64, 4, data);
     state.dxl_on = true;
 }
-void dxl_disable(){
+void dxl_disable() {
     for (int i = 0; i < 5; i++) {
         dxl_write(dxl_ids[i], 64, 0); // servos torque off
     }
@@ -449,8 +485,8 @@ void dxl_write(uint8_t id, uint32_t reg_addr, uint32_t value) {
     dxl_tx[12] = (uint8_t)((value >> 16) & 0x00FF); // data 2
     dxl_tx[13] = (uint8_t)((value >> 24) & 0x00FF); // data 3 MSB
 
-    uint16_t CRC = update_crc(0, dxl_tx, 14);            // number of bytes until now including header
-    uint8_t CRC_L = (uint8_t)(CRC & 0x00FF); // Little-endian
+    uint16_t CRC = update_crc(0, dxl_tx, 14); // number of bytes until now including header
+    uint8_t CRC_L = (uint8_t)(CRC & 0x00FF);  // Little-endian
     uint8_t CRC_H = (uint8_t)((CRC >> 8) & 0x00FF);
 
     dxl_tx[14] = CRC_L;
@@ -461,36 +497,37 @@ void dxl_write(uint8_t id, uint32_t reg_addr, uint32_t value) {
     delayMicroseconds(300);
 }
 
-void dxl_syncread(uint32_t reg_addr, uint32_t bytes_to_read, uint8_t* rx) { //reads from all the servos
-    dxl_tx[0] = 0xFF; // header
-    dxl_tx[1] = 0xFF; // header
-    dxl_tx[2] = 0xFD; // header
-    dxl_tx[3] = 0x00; // reserved
-    dxl_tx[4] = 0xFE; // ID: broadcast
-    dxl_tx[5] = 0x0C; // length L (length of instruction, parameters, and crc)
-    dxl_tx[6] = 0x00; // length H
+void dxl_syncread(uint32_t reg_addr, uint32_t bytes_to_read, uint8_t *rx) { // reads from all the servos
+    dxl_tx[0] = 0xFF;                                                       // header
+    dxl_tx[1] = 0xFF;                                                       // header
+    dxl_tx[2] = 0xFD;                                                       // header
+    dxl_tx[3] = 0x00;                                                       // reserved
+    dxl_tx[4] = 0xFE;                                                       // ID: broadcast
+    dxl_tx[5] = 0x0C;                                                       // length L (length of instruction, parameters, and crc)
+    dxl_tx[6] = 0x00;                                                       // length H
 
     dxl_tx[7] = 0x82; // instruction (sync read)
 
     dxl_tx[8] = (uint8_t)(reg_addr & 0x00FF);        // P1: register address L
     dxl_tx[9] = (uint8_t)((reg_addr >> 8) & 0x00FF); // P2: register address H
 
-    dxl_tx[10] = (uint8_t)(bytes_to_read & 0x00FF);         // P3: num bytes L
-    dxl_tx[11] = (uint8_t)((bytes_to_read >> 8) & 0x00FF);  // P4: num bytes H
+    dxl_tx[10] = (uint8_t)(bytes_to_read & 0x00FF);        // P3: num bytes L
+    dxl_tx[11] = (uint8_t)((bytes_to_read >> 8) & 0x00FF); // P4: num bytes H
     dxl_tx[12] = (uint8_t)(dxl_ids[0] & 0x00FF);           // P5: ID of 1st device to read from
     dxl_tx[13] = (uint8_t)(dxl_ids[1] & 0x00FF);           // P6: ID of 2nd device to read from
     dxl_tx[14] = (uint8_t)(dxl_ids[2] & 0x00FF);           // P7: ID of 3rd device to read from
     dxl_tx[15] = (uint8_t)(dxl_ids[3] & 0x00FF);           // P8: ID of 4th device to read from
     dxl_tx[16] = (uint8_t)(dxl_ids[4] & 0x00FF);           // P9: ID of 5th device to read from
 
-    unsigned short CRC = update_crc(0, dxl_tx, 17);            // last number is packet length until now
-    uint8_t CRC_L = (uint8_t)(CRC & 0x00FF); // Little-endian
+    unsigned short CRC = update_crc(0, dxl_tx, 17); // last number is packet length until now
+    uint8_t CRC_L = (uint8_t)(CRC & 0x00FF);        // Little-endian
     uint8_t CRC_H = (uint8_t)((CRC >> 8) & 0x00FF);
 
     dxl_tx[17] = CRC_L;
     dxl_tx[18] = CRC_H;
 
-    while (dxl_serial.available()) dxl_serial.read(); // clear rx buffer
+    while (dxl_serial.available())
+        dxl_serial.read(); // clear rx buffer
 
     dxl_serial.write(dxl_tx, 19);
     // while (dxl_serial.available()) dxl_serial.read(); // clear rx buffer
@@ -501,42 +538,42 @@ void dxl_syncread(uint32_t reg_addr, uint32_t bytes_to_read, uint8_t* rx) { //re
     *rx = dxl_serial.readBytes(rx, 100);
 }
 
-
-void dxl_syncwrite(uint32_t reg_addr, uint8_t bytes_to_write, uint32_t* data) { //bytes_to_write max 4 bytes because data is 32bit
-    dxl_tx[0] = 0xFF; // header
-    dxl_tx[1] = 0xFF; // header
-    dxl_tx[2] = 0xFD; // header
-    dxl_tx[3] = 0x00; // reserved
-    dxl_tx[4] = 0xFE; // ID: broadcast
+// doesn't work right now
+void dxl_syncwrite(uint32_t reg_addr, uint8_t bytes_to_write, uint32_t *data) { // bytes_to_write max 4 bytes because data is 32bit
+    dxl_tx[0] = 0xFF;                                                           // header
+    dxl_tx[1] = 0xFF;                                                           // header
+    dxl_tx[2] = 0xFD;                                                           // header
+    dxl_tx[3] = 0x00;                                                           // reserved
+    dxl_tx[4] = 0xFE;                                                           // ID: broadcast
 
     uint8_t param_len = sizeof(dxl_ids) * (bytes_to_write + 1);
 
     dxl_tx[5] = (param_len + 7); // length L (length of instruction, parameters, and crc)
-    dxl_tx[6] = 0x00; // length H
+    dxl_tx[6] = 0x00;            // length H
 
     dxl_tx[7] = 0x83; // instruction (write)
 
     dxl_tx[8] = (uint8_t)(reg_addr & 0x00FF);        // P1: register address L
     dxl_tx[9] = (uint8_t)((reg_addr >> 8) & 0x00FF); // P2: register address H
 
-    dxl_tx[10] = (uint8_t)(bytes_to_write & 0x00FF);         // P3: num bytes L
-    dxl_tx[11] = (uint8_t)((bytes_to_write >> 8) & 0x00FF);  // P4: num bytes H
+    dxl_tx[10] = (uint8_t)(bytes_to_write & 0x00FF);        // P3: num bytes L
+    dxl_tx[11] = (uint8_t)((bytes_to_write >> 8) & 0x00FF); // P4: num bytes H
 
-    for(uint8_t i=0; i<sizeof(dxl_ids); i++){
-        dxl_tx[12 + i*(bytes_to_write+1)] = (uint8_t)(dxl_ids[i] & 0x00FF);  // P5: target device ID
-        for(uint8_t j=0; j<bytes_to_write; j++){
-            dxl_tx[13 + i*(bytes_to_write+1) + j] = (uint8_t)((data[i]>>(j*8)) & 0x00FF);  // P6: target device ID
+    for (uint8_t i = 0; i < sizeof(dxl_ids); i++) {
+        dxl_tx[12 + i * (bytes_to_write + 1)] = (uint8_t)(dxl_ids[i] & 0x00FF); // P5: target device ID
+        for (uint8_t j = 0; j < bytes_to_write; j++) {
+            dxl_tx[13 + i * (bytes_to_write + 1) + j] = (uint8_t)((data[i] >> (j * 8)) & 0x00FF); // P6: target device ID
         }
     }
 
-    uint16_t CRC = update_crc(0, dxl_tx, param_len + 12);            // number of bytes until now including header
-    uint8_t CRC_L = (uint8_t)(CRC & 0x00FF); // Little-endian
+    uint16_t CRC = update_crc(0, dxl_tx, param_len + 12); // number of bytes until now including header
+    uint8_t CRC_L = (uint8_t)(CRC & 0x00FF);              // Little-endian
     uint8_t CRC_H = (uint8_t)((CRC >> 8) & 0x00FF);
 
     dxl_tx[param_len + 12] = CRC_L;
     dxl_tx[param_len + 13] = CRC_H;
 
-    dxl_serial.write(dxl_tx, param_len+14);
+    dxl_serial.write(dxl_tx, param_len + 14);
     delayMicroseconds(500);
 }
 

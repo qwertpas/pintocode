@@ -54,6 +54,7 @@ def main():
         [servos[0], servos[1]] = interp(traj_rightarm, elapsed, ['dxl_pos[0]', 'dxl_pos[1]'], speed=2) #maybe use period as parameter instead
         [servos[3], servos[2]] = np.array([4095, 4095]) - interp(traj_rightarm, elapsed, ['dxl_pos[0]', 'dxl_pos[1]'], speed=2, phase_shift=0)
 
+        recv_from_estop()
         
         time.sleep(0.01)
 
@@ -72,13 +73,50 @@ def send_to_estop():
         cmd_str += f"m{i}:{int(motors[i]):05}\n"
     cmd_str += "#\t"
 
-    print(cmd_str)
+    # print(cmd_str)
 
     try:
         ser.write(cmd_str.encode())
-    except:
+    except Exception as e:
+        print(e)
         ser = None
         print("Estop disconnected")
+
+
+message = ""
+delimiter = '\t'
+def recv_from_estop():
+    # print(ser.read_all().decode("utf-8", errors='ignore'), end=None)
+    global ser
+    global messagebuffer
+    global message
+
+    messagecount = 0
+
+    if ser.in_waiting > 0:
+        try:
+            uarttext = ser.read_all().decode('utf-8', errors='ignore')
+        except Exception as e:
+            print(e)
+            return
+
+        ending=0
+        while(uarttext):
+            ending = uarttext.find(delimiter)
+            if(ending == -1):
+                break
+
+            message += uarttext[0:ending]
+            print(message)
+            print("_—————____—————____—————____—————____—————____—————___")
+            messagebuffer = message
+
+            messagecount += 1
+
+            message = "" #clear message
+            uarttext = uarttext[ending+len(delimiter):] #front of buffer used up
+
+        message = uarttext #whatver is left over
 
 
 def interp(traj_df, elapsed, labels, speed=1, phase_shift=0):
