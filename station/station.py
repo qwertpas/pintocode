@@ -5,6 +5,7 @@ import os
 import pandas as pd
 from timeit import default_timer as timer
 from periodics import PeriodicSleeper
+import numpy as np
 
 os.environ['SDL_JOYSTICK_ALLOW_BACKGROUND_EVENTS'] = '1'
 pygame.init()
@@ -50,7 +51,8 @@ def main():
 
         handle_joysticks()
 
-        (servos[0], servos[1]) = interp(traj_rightarm, elapsed, ['dxl_pos[0]', 'dxl_pos[1]'], speed=1) #maybe use period as parameter instead
+        [servos[0], servos[1]] = interp(traj_rightarm, elapsed, ['dxl_pos[0]', 'dxl_pos[1]'], speed=2) #maybe use period as parameter instead
+        [servos[3], servos[2]] = np.array([4095, 4095]) - interp(traj_rightarm, elapsed, ['dxl_pos[0]', 'dxl_pos[1]'], speed=2, phase_shift=0)
 
         
         time.sleep(0.01)
@@ -79,10 +81,10 @@ def send_to_estop():
         print("Estop disconnected")
 
 
-def interp(traj_df, elapsed, labels, speed=1):
+def interp(traj_df, elapsed, labels, speed=1, phase_shift=0):
     period = traj_df['elapsed'][len(traj_df)-1]/speed
 
-    phase = elapsed/period
+    phase = elapsed/period + phase_shift
     progress = (phase - int(phase)) * len(traj_df) #goes from 0 to length of traj
     index = int(progress)
     index_frac = progress - index
@@ -95,7 +97,7 @@ def interp(traj_df, elapsed, labels, speed=1):
     interpolated = []
     for label in labels:
         interpolated.append((1-index_frac)*traj_df[label][index] + (index_frac)*traj_df[label][index_next])
-    return interpolated
+    return np.array(interpolated)
         
 
 

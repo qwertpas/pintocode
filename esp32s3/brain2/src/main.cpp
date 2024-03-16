@@ -44,7 +44,7 @@ typedef struct cmd_struct {
     uint16_t servos[6];
     int16_t motors[2];
 } cmd_struct;
-cmd_struct cmd = {0};
+cmd_struct cmd;
 
 typedef struct state_struct {
     uint8_t dxl_on;
@@ -65,6 +65,7 @@ String recv_vars = "";
 
 
 //function declarations
+void reset_cmd(cmd_struct _cmd);
 uint8_t send_O32_cmd(uint8_t addr, uint8_t CMD_TYPE, uint16_t data, uint8_t *rx);
 void dxl_enable();
 void dxl_disable();
@@ -164,11 +165,12 @@ void setup() {
     Serial.println(WiFi.macAddress());
 
     Serial.println("Turning on motors...");
+    reset_cmd(cmd);
     digitalWrite(LED_BUILTIN, LED_LIT);
     digitalWrite(MOTOR_ON, HIGH);
 
     delay(2000); // wait for motors to initialize
-    dxl_enable();
+    // dxl_enable();
 
     timer_1khz = timerBegin(0, 80, true);                    // timer index 0, 80MHz clock, 80div=1us precision, true=count up
     timerAttachInterrupt(timer_1khz, &timer_1khz_ISR, true); // true=edgetriggered
@@ -207,11 +209,10 @@ void loop() {
     }
 
     if (recv_watchdog > 100) { // didn't receive anything from joystick in a while
-        cmd = {0};
+        reset_cmd(cmd);
         motA_nbytes = send_O32_cmd(0xA, CMD_SET_VOLTAGE, 0, motA_rx);
         motB_nbytes = send_O32_cmd(0xB, CMD_SET_VOLTAGE, 0, motB_rx);
-        // dxl_disable();
-        dxl_enable();
+        dxl_disable();
         if (Serial.availableForWrite() && print_timer > 100){
             print_timer = 0;
             Serial.println("not receiving joystick \t");
@@ -274,28 +275,26 @@ void loop() {
     }
 
     // normal operation
-    int16_t cmd_A = (pos_A > calib_pos_A) ? 0 : cmd.motors[0];
-    int16_t cmd_B = (pos_B > calib_pos_B) ? 0 : cmd.motors[1];
+    int16_t cmd_A = (DO_CALIB && pos_A > calib_pos_A) ? 0 : cmd.motors[0];
+    int16_t cmd_B = (DO_CALIB && pos_B > calib_pos_B) ? 0 : cmd.motors[1];
     motA_nbytes = send_O32_cmd(0xA, CMD_SET_VOLTAGE, twoscomplement14(cmd_A), motA_rx);
     motB_nbytes = send_O32_cmd(0xB, CMD_SET_VOLTAGE, twoscomplement14(cmd_B), motB_rx);
 
     pos_A = pad28(motA_rx[0], motA_rx[1], motA_rx[2], motA_rx[3]);
     pos_B = pad28(motB_rx[0], motB_rx[1], motB_rx[2], motB_rx[3]);
 
-    // for (int i = 0; i < 5; i++) {
-    //     // uint16_t duty = map(cmd.servos[i], 0, 180, 0, 4095); //map 0-180º to 0-4095 for dynamixel position
-    //     uint16_t duty = map(180, 0, 360, 0, 4095); // map 0-180º to 0-4095 for dynamixel position
-    //     dxl_write(dxl_ids[i], 116, duty);
-    //     // delayMicroseconds(300);
-    // }
+    dxl_write(dxl_ids[0], 116, cmd.servos[0]);
+    dxl_write(dxl_ids[1], 116, cmd.servos[1]);
+    dxl_write(dxl_ids[2], 116, cmd.servos[2]);
+    dxl_write(dxl_ids[3], 116, cmd.servos[3]);
+    dxl_write(dxl_ids[4], 116, cmd.servos[4]);
 
-
-    // dxl_syncread(0x0084, 4, dxl_rx);
-    // for(uint8_t i=0; i<5; i++){
-    //     if(dxl_rx[15*i + 7] == 0x55){ //check if it's a return status packet
-    //         state.dxl_pos[i] = (dxl_rx[15*i + 10] << 8) + dxl_rx[15*i + 9]; 
-    //     }
-    // }
+    dxl_syncread(0x0084, 4, dxl_rx);
+    for(uint8_t i=0; i<5; i++){
+        if(dxl_rx[15*i + 7] == 0x55){ //check if it's a return status packet
+            state.dxl_pos[i] = (dxl_rx[15*i + 10] << 8) + dxl_rx[15*i + 9]; 
+        }
+    }
 
     if (Serial.available()) { // restart if first character is 'R'
         char user_cmd = Serial.read();
@@ -385,6 +384,18 @@ void loop() {
         );
         Serial.write(print_buf);
     }
+}
+
+
+
+void reset_cmd(cmd_struct _cmd){
+    _cmd.servos[0] = 2048;
+    _cmd.servos[1] = 2048;
+    _cmd.servos[2] = 2048;
+    _cmd.servos[3] = 2048;
+    _cmd.servos[4] = 2048;
+    _cmd.motors[0] = 0;
+    _cmd.motors[1] = 0;
 }
 
 uint8_t send_O32_cmd(uint8_t addr, uint8_t CMD_TYPE, uint16_t data, uint8_t *rx) {
