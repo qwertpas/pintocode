@@ -23,21 +23,20 @@ joy_data = {
     'righty': 0,
 }
 
-servos = [0, 1, 2, 3, 4, 5]
-motors = [7, 8]
+servos = [2048] * 5
+motors = [0]*2
 
 done = False
 def main():
     global ser
 
-
-
-    traj_rightarm = pd.read_csv("data/rightarm.csv")
+    traj_rightarm = pd.read_csv("data/backandforth.csv")
 
     send_handler = PeriodicSleeper(send_to_estop, 0.01)
 
     start_time = timer()
     while not done:
+        elapsed = (timer() - start_time) * 1000
 
         while(ser is None):
             try:
@@ -47,15 +46,12 @@ def main():
                 print("plug in estop pls")
                 time.sleep(0.1)
         
-        elapsed = (timer() - start_time) * 1000
-
         handle_joysticks()
 
-        [servos[0], servos[1]] = interp(traj_rightarm, elapsed, ['dxl_pos[0]', 'dxl_pos[1]'], speed=2) #maybe use period as parameter instead
-        [servos[3], servos[2]] = np.array([4095, 4095]) - interp(traj_rightarm, elapsed, ['dxl_pos[0]', 'dxl_pos[1]'], speed=2, phase_shift=0)
+        [servos[0], servos[1]] = interp(traj_rightarm, elapsed, ['dxl_pos[0]', 'dxl_pos[1]'], speed=1+joy_data['lefty']) #maybe use period as parameter instead
+        [servos[3], servos[2]] = np.array([4095, 4095]) - interp(traj_rightarm, elapsed, ['dxl_pos[0]', 'dxl_pos[1]'], speed=1+joy_data['lefty'], phase_shift=0.5)
 
-        if(ser is not None):
-            recv_from_estop()
+        recv_from_estop()
         
         time.sleep(0.01)
 
@@ -68,7 +64,7 @@ def send_to_estop():
         return
 
     cmd_str = ""
-    for i in range(6):
+    for i in range(5):
         cmd_str += f"s{i}:{int(servos[i]):05}\n"
     for i in range(2):
         cmd_str += f"m{i}:{int(motors[i]):05}\n"
@@ -105,6 +101,9 @@ def recv_from_estop():
                     break
 
                 message += uarttext[0:ending]
+
+                if(len(joysticks) > 0):
+                    print(pd.DataFrame([joy_data]).round(2))
                 print(message)
                 print("_—————____—————____—————____—————____—————____—————___")
                 messagebuffer = message
@@ -120,7 +119,7 @@ def recv_from_estop():
         return
 
 
-def interp(traj_df, elapsed, labels, speed=1, phase_shift=0):
+def interp(traj_df, elapsed, labels, speed=1, phase_shift=0, dir=1):
     period = traj_df['elapsed'][len(traj_df)-1]/speed
 
     phase = elapsed/period + phase_shift
@@ -156,9 +155,9 @@ def handle_joysticks():
 
         for joystick in joysticks.values():
             joy_data['leftx'] = joystick.get_axis(0)
-            joy_data['lefty'] = joystick.get_axis(1)
+            joy_data['lefty'] = -joystick.get_axis(1)
             joy_data['rightx'] = joystick.get_axis(2)
-            joy_data['righty'] = joystick.get_axis(3)
+            joy_data['righty'] = -joystick.get_axis(3)
             break #assume only one joystick
 
 

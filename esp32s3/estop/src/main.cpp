@@ -54,11 +54,8 @@ void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
     espnow_ok = (status == ESP_OK);
 
     if (!espnow_ok) {
-        Serial.println("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~");
+        // Serial.println("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~");
         switch (status) {
-        case ESP_OK:
-            Serial.println("ok");
-            break;
         case ESP_ERR_ESPNOW_NOT_INIT:
             Serial.println("NOT_INIT");
             break;
@@ -78,8 +75,8 @@ void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
             Serial.println("IF");
             break;
         default:
-            Serial.println("some other error");
-            Serial.println((int)status);
+            // Serial.println("some other error");
+            // Serial.println((int)status);
             break;
         }
     }
@@ -105,8 +102,8 @@ void IRAM_ATTR blink_timer_ISR() { // 1kHz
 
 void setup() {
     Serial.begin(115200);
-    Serial.setTimeout(1);
-    Serial.setTxTimeoutMs(1);
+    Serial.setTimeout(0);
+    Serial.setTxTimeoutMs(0);
     pinMode(LED_BUILTIN, OUTPUT);
     digitalWrite(LED_BUILTIN, LED_OFF);
 
@@ -137,12 +134,16 @@ void setup() {
         return;
     }
 
+    // delay(1000);
+
     blink_timer = timerBegin(0, 80, true);                     // timer index 0, 80MHz clock, 80div=1us precision, true=count up
     timerAttachInterrupt(blink_timer, &blink_timer_ISR, true); // true=edgetriggered
     timerAlarmWrite(blink_timer, 50 * 1000, true);             // microseconds, true=autoreload
     timerAlarmEnable(blink_timer);                             // start counting
 
     Serial.println("Finished setup");
+
+    while(Serial.available()) Serial.read();
 }
 
 void loop() {
@@ -214,20 +215,35 @@ void loop() {
         station_ok = false;
     }
 
-    if (send_timer > 10 && espnow_tx_size > 0 && station_ok && !ESTOPPED) {
+    if (send_timer > 10) {
         send_timer = 0;
-        esp_now_send(send_to_addrs[1], espnow_tx, espnow_tx_size); // don't read return message here, often no_mem errror
-        // espnow_tx_size = 0;
+
+        if(espnow_tx_size > 0 && espnow_tx_size < 250 && station_ok && !ESTOPPED){
+            esp_now_send(send_to_addrs[1], espnow_tx, espnow_tx_size); // don't read return message here, often no_mem errror
+            espnow_tx_size = 0;
+        }else{
+            uint8_t buf[10] = {1,2,3,4,5,6,7,8,9,10};            
+            esp_now_send(send_to_addrs[1], buf, sizeof(buf)); // don't read return message here, often no_mem errror
+        }
+        
     }
 
-    if (ESTOPPED) {
-        timerAlarmWrite(blink_timer, 500 * 1000, true); // slow blink is Estop pressed
+    // if (send_timer > 10 && station_ok && !ESTOPPED) {
+    //     send_timer = 0;
+    //     uint8_t buf[10] = {1,2,3,4,5,6,7,8,9,10};            
+    //     esp_now_send(send_to_addrs[1], buf, sizeof(buf)); // don't read return message here, often no_mem errror
+    //     // espnow_tx_size = 0;
+    //     // }
+    // }
+
+    if (!espnow_ok) {
+        timerAlarmWrite(blink_timer, 100 * 1000, true); // extra fast blink indicates ESP-NOW error
         led_solid = false;
-    } else if (!station_ok) {
+    }else if(!station_ok) {
         timerAlarmWrite(blink_timer, 200 * 1000, true); // fast blink indicates station disconnected
         led_solid = false;
-    } else if (!espnow_ok) {
-        timerAlarmWrite(blink_timer, 100 * 1000, true); // extra fast blink indicates ESP-NOW error
+    } else if(ESTOPPED) {
+        timerAlarmWrite(blink_timer, 500 * 1000, true); // slow blink is Estop pressed
         led_solid = false;
     } else { // normal operation
         led_solid = true;

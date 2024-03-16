@@ -21,6 +21,7 @@
 #define GPIO35_UNUSED 35
 
 uint8_t estop_mac_addr[] = {0x30, 0x30, 0xF9, 0x34, 0x52, 0xA0};
+uint8_t ESTOPPED = true;
 
 HardwareSerial rs485_0(0);    // RS485 bus 0
 HardwareSerial rs485_1(1);    // RS485 bus 1
@@ -49,7 +50,7 @@ typedef struct cmd_struct {
 cmd_struct cmd;
 
 typedef struct state_struct {
-    uint8_t dxl_on;
+    uint8_t motors_on;
     uint16_t dxl_pos[5];
     uint16_t vbus;
     uint32_t elapsed;
@@ -59,17 +60,9 @@ state_struct state = {0};
 
 char state_str[1024];
 
-// typedef struct telemetry_struct {
-//     float vbus;
-//     float hum;
-//     float pres;
-// } telemetry_struct;
-// telemetry_struct telemetry = {0};
-
 uint32_t recv_watchdog = 0;
 
 elapsedMillis print_timer;
-uint16_t print_period = 10;
 
 elapsedMillis telemetry_timer;
 
@@ -78,6 +71,10 @@ uint8_t disable_motors_flag = 0;
 
 String receivedString = "";
 String recv_vars = "";
+
+
+
+
 
 // function declarations
 void reset_cmd(cmd_struct _cmd);
@@ -89,22 +86,22 @@ void dxl_syncread(uint32_t reg_addr, uint32_t value, uint8_t *rx);
 void dxl_syncwrite(uint32_t reg_addr, uint8_t bytes_to_write, uint32_t *data);
 uint16_t update_crc(uint16_t crc_accum, uint8_t *data_blk_ptr, uint16_t data_blk_size);
 
-const String servolabels[] = {"s0", "s1", "s2"};
+
+
+
+
+
+
+//CALLBACKS
 void OnDataRecv(const uint8_t *mac, const uint8_t *incomingData, int len) { // len should not be longer than 250bytes
-    // stupid way to read recieved string but oh well gotta go fast
     receivedString = String((char *)incomingData);
-    cmd.servos[0] = receivedString.substring(receivedString.indexOf("s0") + 3, receivedString.indexOf("s0") + 8).toInt();
-    cmd.servos[1] = receivedString.substring(receivedString.indexOf("s1") + 3, receivedString.indexOf("s1") + 8).toInt();
-    cmd.servos[2] = receivedString.substring(receivedString.indexOf("s2") + 3, receivedString.indexOf("s2") + 8).toInt();
-    cmd.servos[3] = receivedString.substring(receivedString.indexOf("s3") + 3, receivedString.indexOf("s3") + 8).toInt();
-    cmd.servos[4] = receivedString.substring(receivedString.indexOf("s4") + 3, receivedString.indexOf("s4") + 8).toInt();
-    cmd.motors[0] = receivedString.substring(receivedString.indexOf("m0") + 3, receivedString.indexOf("m0") + 8).toInt();
-    cmd.motors[1] = receivedString.substring(receivedString.indexOf("m1") + 3, receivedString.indexOf("m1") + 8).toInt();
 
     if (receivedString.indexOf("s0") != -1) { // data exists
+
         if (recv_watchdog > 100) {
-            enable_motors_flag = 1;
+            enable_motors_flag = 1; //reenable motors
         }
+        ESTOPPED = false;
         recv_watchdog = 0;
     }
 }
@@ -118,6 +115,12 @@ void IRAM_ATTR timer_1khz_ISR() { // 1kHz
     recv_watchdog++;
 }
 
+
+
+
+
+
+
 void setup() {
     pinMode(LED_BUILTIN, OUTPUT);
     digitalWrite(LED_BUILTIN, LED_UNLIT);
@@ -127,9 +130,9 @@ void setup() {
 
     pinMode(GPIO_D1, INPUT);
 
-    // USB printout
-    Serial.begin(115200);
-    Serial.setTimeout(1);
+    Serial.begin(115200); //USB print
+    Serial.setTimeout(0);
+    Serial.setTxTimeoutMs(0);
 
     rs485_0.begin(1000000, SERIAL_8N1);                // baudrate, parity
     rs485_0.setPins(UART0_RX, UART0_TX, -1, UART0_DE); // RX, TX, CTS, DE
@@ -148,6 +151,9 @@ void setup() {
 
     WiFi.mode(WIFI_MODE_STA);
     Serial.println(WiFi.macAddress());
+
+    delay(3000);
+
     if (esp_now_init() != ESP_OK) {
         Serial.println("Error initializing ESP-NOW");
         delay(3000);
@@ -203,9 +209,15 @@ int32_t calib_pos_B = 0;
 int32_t pos_A = 0;
 int32_t pos_B = 0;
 
+uint32_t elapsed;
+uint32_t elapsed_prev;
+
 void loop() {
-    uint32_t elapsed = timerReadMilis(timer_elapsed);
+    elapsed_prev = elapsed;
+    elapsed = timerReadMilis(timer_elapsed);
     state.elapsed = elapsed;
+    uint32_t looptime = elapsed - elapsed_prev;
+
 
     uint32_t sns_adc = analogRead(GPIO_D1); // read current no matter what
     if (sns_adc == 0) {
@@ -215,52 +227,15 @@ void loop() {
     }
     state.cur_tot = cur_tot;
 
-    if(telemetry_timer > 10){ //some telemetry will be from the last cycle
-        telemetry_timer = 0;
-
-        size_t state_str_size = sprintf(state_str,
-            "dxl_on:%d\n"
-            "dxl_pos[0]:%d\n"
-            "dxl_pos[1]:%d\n"
-            "dxl_pos[2]:%d\n"
-            "dxl_pos[3]:%d\n"
-            "dxl_pos[4]:%d\n"
-            "vbus:%d\n"
-            "elapsed:%d\n"
-            "cur_tot:%d\n"
-            ,
-            state.dxl_on,
-            state.dxl_pos[0],
-            state.dxl_pos[1],
-            state.dxl_pos[2],
-            state.dxl_pos[3],
-            state.dxl_pos[4],
-            state.vbus,
-            state.elapsed,
-            state.cur_tot
-        );
-        esp_now_send(estop_mac_addr, (uint8_t *) state_str, state_str_size);
-    }
-
-    if (recv_watchdog > 100) { // didn't receive anything from joystick in a while
-        reset_cmd(cmd);
-        motA_nbytes = send_O32_cmd(0xA, CMD_SET_VOLTAGE, 0, motA_rx);
-        motB_nbytes = send_O32_cmd(0xB, CMD_SET_VOLTAGE, 0, motB_rx);
-        dxl_disable();
-        if (Serial.availableForWrite() && print_timer > 100) {
-            print_timer = 0;
-            Serial.println("not receiving joystick, state: \t");
-            Serial.println(state_str);
+    dxl_syncread(0x0084, 4, dxl_rx);
+    for (uint8_t i = 0; i < 5; i++) {
+        if (dxl_rx[15 * i + 7] == 0x55) { // check if it's a return status packet
+            state.dxl_pos[i] = (dxl_rx[15 * i + 10] << 8) + dxl_rx[15 * i + 9];
         }
-        return; // skip what comes after
     }
 
-    if (enable_motors_flag) {
-        enable_motors_flag = 0;
-        delay(100);
-        dxl_enable();
-    }
 
+    //CALIBRATION
     if (calib_state && elapsed < 10000) { // calibration happens when calib_state != 0. If it takes more than 10 seconds, continue to operation
         switch (calib_state) {
         case 1: // extend A at low power until stall
@@ -289,9 +264,9 @@ void loop() {
             break;
         }
 
-        if (print_timer > print_period && Serial.availableForWrite()) {
+        //Calibration prints
+        if (print_timer > 10 && Serial.availableForWrite()) {
             print_timer = 0;
-
             Serial.print("elapsed: ");
             Serial.println(elapsed);
             Serial.print("calib_state: ");
@@ -308,52 +283,91 @@ void loop() {
         return;
     }
 
-    // normal operation
-    int16_t cmd_A = (DO_CALIB && pos_A > calib_pos_A) ? 0 : cmd.motors[0];
-    int16_t cmd_B = (DO_CALIB && pos_B > calib_pos_B) ? 0 : cmd.motors[1];
-    motA_nbytes = send_O32_cmd(0xA, CMD_SET_VOLTAGE, twoscomplement14(cmd_A), motA_rx);
-    motB_nbytes = send_O32_cmd(0xB, CMD_SET_VOLTAGE, twoscomplement14(cmd_B), motB_rx);
 
-    pos_A = pad28(motA_rx[0], motA_rx[1], motA_rx[2], motA_rx[3]);
-    pos_B = pad28(motB_rx[0], motB_rx[1], motB_rx[2], motB_rx[3]);
 
-    dxl_write(dxl_ids[0], 116, cmd.servos[0]);
-    dxl_write(dxl_ids[1], 116, cmd.servos[1]);
-    dxl_write(dxl_ids[2], 116, cmd.servos[2]);
-    dxl_write(dxl_ids[3], 116, cmd.servos[3]);
-    dxl_write(dxl_ids[4], 116, cmd.servos[4]);
+    // SET MOTOR POWER
+    if(!ESTOPPED){
+        int16_t cmd_A = (DO_CALIB && pos_A > calib_pos_A) ? 0 : cmd.motors[0];
+        int16_t cmd_B = (DO_CALIB && pos_B > calib_pos_B) ? 0 : cmd.motors[1];
+        motA_nbytes = send_O32_cmd(0xA, CMD_SET_VOLTAGE, twoscomplement14(cmd_A), motA_rx);
+        motB_nbytes = send_O32_cmd(0xB, CMD_SET_VOLTAGE, twoscomplement14(cmd_B), motB_rx);
+        pos_A = pad28(motA_rx[0], motA_rx[1], motA_rx[2], motA_rx[3]);
+        pos_B = pad28(motB_rx[0], motB_rx[1], motB_rx[2], motB_rx[3]);
 
-    dxl_syncread(0x0084, 4, dxl_rx);
-    for (uint8_t i = 0; i < 5; i++) {
-        if (dxl_rx[15 * i + 7] == 0x55) { // check if it's a return status packet
-            state.dxl_pos[i] = (dxl_rx[15 * i + 10] << 8) + dxl_rx[15 * i + 9];
+        dxl_write(dxl_ids[1], 116, cmd.servos[1]);
+        dxl_write(dxl_ids[0], 116, cmd.servos[0]);
+        dxl_write(dxl_ids[2], 116, cmd.servos[2]);
+        dxl_write(dxl_ids[4], 116, cmd.servos[4]);
+        dxl_write(dxl_ids[3], 116, cmd.servos[3]);
+    }
+
+
+    if (receivedString.indexOf("s0") != -1) { // data exists
+        // stupid way to read recieved string but oh well gotta go fast
+        cmd.servos[0] = receivedString.substring(receivedString.indexOf("s0") + 3, receivedString.indexOf("s0") + 8).toInt();
+        cmd.servos[1] = receivedString.substring(receivedString.indexOf("s1") + 3, receivedString.indexOf("s1") + 8).toInt();
+        cmd.servos[2] = receivedString.substring(receivedString.indexOf("s2") + 3, receivedString.indexOf("s2") + 8).toInt();
+        cmd.servos[3] = receivedString.substring(receivedString.indexOf("s3") + 3, receivedString.indexOf("s3") + 8).toInt();
+        cmd.servos[4] = receivedString.substring(receivedString.indexOf("s4") + 3, receivedString.indexOf("s4") + 8).toInt();
+        cmd.motors[0] = receivedString.substring(receivedString.indexOf("m0") + 3, receivedString.indexOf("m0") + 8).toInt();
+        cmd.motors[1] = receivedString.substring(receivedString.indexOf("m1") + 3, receivedString.indexOf("m1") + 8).toInt();
+    }
+
+
+    // JOYSTICK WATCHDOG
+    if (recv_watchdog > 100) { // didn't receive anything from joystick in a while
+        ESTOPPED = true; // skip what comes after
+
+        reset_cmd(cmd);
+        motA_nbytes = send_O32_cmd(0xA, CMD_SET_VOLTAGE, 0, motA_rx);
+        motB_nbytes = send_O32_cmd(0xB, CMD_SET_VOLTAGE, 0, motB_rx);
+        dxl_disable();
+        if (Serial.availableForWrite() && print_timer > 10) { //not receiving joystick
+            print_timer = 0;
+            Serial.println("no stick ~~~~~~~~~~~~~~~~~~~~");
+            Serial.print(state_str);
+            Serial.println('\t');
         }
     }
 
-    if (Serial.available()) { // restart if first character is 'R'
-        char user_cmd = Serial.read();
-        switch (user_cmd) {
-        case 'm':
-            if (state.dxl_on)
-                dxl_disable();
-            else
-                dxl_enable();
-            break;
-        case 'r':
-            timerWrite(timer_elapsed, 0); // reset elapsed time
-            break;
-        case 'R':
-            ESP.restart();
-            break;
-        default:
-            break;
-        }
-
-        while (Serial.available())
-            Serial.read();
+    //REENABLE MOTORS
+    if (enable_motors_flag) {
+        enable_motors_flag = 0;
+        delay(100);
+        dxl_enable();
     }
 
-    if (print_timer > print_period && Serial.availableForWrite()) {
+
+    //TELEMETRY
+    if(telemetry_timer > 10){
+        telemetry_timer = 0;
+        size_t state_str_size = sprintf(state_str,
+            "motors_on:%d\n"
+            "dxl_pos[0]:%d\n"
+            "dxl_pos[1]:%d\n"
+            "dxl_pos[2]:%d\n"
+            "dxl_pos[3]:%d\n"
+            "dxl_pos[4]:%d\n"
+            "vbus:%d\n"
+            "elapsed:%d\n"
+            "cur_tot:%d\n"
+            ,
+            state.motors_on,
+            state.dxl_pos[0],
+            state.dxl_pos[1],
+            state.dxl_pos[2],
+            state.dxl_pos[3],
+            state.dxl_pos[4],
+            state.vbus,
+            state.elapsed,
+            state.cur_tot
+        );
+        esp_now_send(estop_mac_addr, (uint8_t *) state_str, state_str_size);
+    }
+
+    
+    // SERIAL PRINT OUT
+    if (print_timer > 10 && Serial.availableForWrite()) {
         print_timer = 0;
 
         if (motA_nbytes == 7) {
@@ -383,6 +397,7 @@ void loop() {
         sprintf(
             print_buf,
             "elapsed: %ld\n"
+            "looptime: %d\n"
             // "cur_tot: %f\n"
             // "calib_pos_A: %ld\n"
             // "calib_pos_B: %ld\n"
@@ -398,9 +413,10 @@ void loop() {
             "dxl_pos[2]: %ld\n"
             "dxl_pos[3]: %ld\n"
             "dxl_pos[4]: %ld\n"
-            "dxl_on: %ld\t\n",
+            "motors_on: %ld\t\n",
 
             elapsed,
+            looptime,
             // cur_tot,
             // calib_pos_A,
             // calib_pos_B,
@@ -416,13 +432,39 @@ void loop() {
             state.dxl_pos[2],
             state.dxl_pos[3],
             state.dxl_pos[4],
-            state.dxl_on);
+            state.motors_on);
         Serial.write(print_buf);
     }
 
 
-    
+
+    // SERIAL COMMAND
+    if (Serial.available()) { // restart if first character is 'R'
+        char user_cmd = Serial.read();
+        switch (user_cmd) {
+        case 'm':
+            if (state.motors_on)
+                dxl_disable();
+            else
+                dxl_enable();
+            break;
+        case 'r':
+            timerWrite(timer_elapsed, 0); // reset elapsed time
+            break;
+        case 'R':
+            ESP.restart();
+            break;
+        default:
+            break;
+        }
+        while (Serial.available()) Serial.read(); //clear RX buffer
+    }
+
+
 }
+
+
+
 
 void reset_cmd(cmd_struct _cmd) {
     _cmd.servos[0] = 2048;
@@ -457,13 +499,13 @@ void dxl_enable() {
     }
     // uint32_t data[5] = {1,1,1,1,1};
     // dxl_syncwrite(64, 4, data);
-    state.dxl_on = true;
+    state.motors_on = true;
 }
 void dxl_disable() {
     for (int i = 0; i < 5; i++) {
         dxl_write(dxl_ids[i], 64, 0); // servos torque off
     }
-    state.dxl_on = false;
+    state.motors_on = false;
 }
 
 void dxl_write(uint8_t id, uint32_t reg_addr, uint32_t value) {
