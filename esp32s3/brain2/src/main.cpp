@@ -21,7 +21,7 @@
 #define GPIO35_UNUSED 35
 
 uint8_t estop_mac_addr[] = {0x30, 0x30, 0xF9, 0x34, 0x52, 0xA0};
-uint8_t ESTOPPED = true;
+uint8_t NO_SIGNAL = true;
 
 HardwareSerial rs485_0(0);    // RS485 bus 0
 HardwareSerial rs485_1(1);    // RS485 bus 1
@@ -46,13 +46,26 @@ hw_timer_t *timer_elapsed = NULL; // keeping track of elapsed time
 typedef struct cmd_struct {
     uint16_t servos[6];
     int16_t motors[2];
+    uint16_t aux;
+    uint16_t aux_prev;
 } cmd_struct;
 cmd_struct cmd;
 
 typedef struct state_struct {
-    uint8_t motors_on;
+    uint8_t motor_power_on;
+    uint8_t dxl_torque_on;
     uint16_t dxl_pos[5];
-    uint16_t vbus;
+    
+    int16_t rpmA;
+    uint8_t temp_ntcA;
+    float vbusA;
+
+    int16_t rpmB;
+    uint8_t temp_ntcB;
+    float vbusB;
+
+    float vbus;
+
     uint32_t elapsed;
     float cur_tot;
 } state_struct;
@@ -79,8 +92,8 @@ String recv_vars = "";
 // function declarations
 void reset_cmd(cmd_struct _cmd);
 uint8_t send_O32_cmd(uint8_t addr, uint8_t CMD_TYPE, uint16_t data, uint8_t *rx);
-void dxl_enable();
-void dxl_disable();
+void set_dxl_torque_on();
+void set_dxl_torque_off();
 void dxl_write(uint8_t id, uint32_t reg_addr, uint32_t value);
 void dxl_syncread(uint32_t reg_addr, uint32_t value, uint8_t *rx);
 void dxl_syncwrite(uint32_t reg_addr, uint8_t bytes_to_write, uint32_t *data);
@@ -101,7 +114,7 @@ void OnDataRecv(const uint8_t *mac, const uint8_t *incomingData, int len) { // l
         if (recv_watchdog > 100) {
             enable_motors_flag = 1; //reenable motors
         }
-        ESTOPPED = false;
+        NO_SIGNAL = false;
         recv_watchdog = 0;
     }
 }
@@ -181,7 +194,7 @@ void setup() {
     digitalWrite(MOTOR_ON, HIGH);
 
     delay(2000); // wait for motors to initialize
-    // dxl_enable();
+    // set_dxl_torque_on();
 
     timer_1khz = timerBegin(0, 80, true);                    // timer index 0, 80MHz clock, 80div=1us precision, true=count up
     timerAttachInterrupt(timer_1khz, &timer_1khz_ISR, true); // true=edgetriggered
@@ -234,9 +247,18 @@ void loop() {
         }
     }
 
+    if((cmd.aux & 0b00001) && !(cmd.aux_prev & 0b00001)){ //on rising edge of aux bit 0, toggle motor power
+        if(state.motor_power_on){
+            state.motor_power_on = false;
+            digitalWrite(MOTOR_ON, LOW);
+        }else{
+            state.motor_power_on = true;
+            digitalWrite(MOTOR_ON, HIGH);
+        }
+    }
 
     //CALIBRATION
-    if (calib_state && elapsed < 10000) { // calibration happens when calib_state != 0. If it takes more than 10 seconds, continue to operation
+    if (!NO_SIGNAL && calib_state && elapsed < 10000) { // calibration happens when calib_state != 0. If it takes more than 10 seconds, continue to operation
         switch (calib_state) {
         case 1: // extend A at low power until stall
             motA_nbytes = send_O32_cmd(0xA, CMD_SET_VOLTAGE, twoscomplement14(calib_cmd), motA_rx);
@@ -286,7 +308,7 @@ void loop() {
 
 
     // SET MOTOR POWER
-    if(!ESTOPPED){
+    if(!NO_SIGNAL){
         int16_t cmd_A = (DO_CALIB && pos_A > calib_pos_A) ? 0 : cmd.motors[0];
         int16_t cmd_B = (DO_CALIB && pos_B > calib_pos_B) ? 0 : cmd.motors[1];
         motA_nbytes = send_O32_cmd(0xA, CMD_SET_VOLTAGE, twoscomplement14(cmd_A), motA_rx);
@@ -301,8 +323,35 @@ void loop() {
         dxl_write(dxl_ids[3], 116, cmd.servos[3]);
     }
 
+    // GET O32 data
+    if (motA_nbytes == 9) {
+        state.rpmA = pad14(motA_rx[4], motA_rx[5]);
+        state.temp_ntcA = motA_rx[6];
+        state.vbusA = pad14(motA_rx[7], motA_rx[8]) * 3.3*5.1020f/4096.;
+    }else{
+        state.rpmA = 0;
+        state.temp_ntcA = 0;
+        state.vbusA = 0;
+    }
+    if (motB_nbytes == 9) {
+        state.rpmB = pad14(motB_rx[4], motB_rx[5]);
+        state.temp_ntcB = motB_rx[6];
+        state.vbusB = pad14(motB_rx[7], motB_rx[8]) * 3.3*4.9575f/4096.;
+    }else{
+        state.rpmB = 0;
+        state.temp_ntcB = 0;
+        state.vbusB = 0;
+    }
+    if(state.vbusA!=0 && state.vbusB!=0){
+        state.vbus = (state.vbusA+state.vbusB)/2.;
+    }else{
+        state.vbus = 0;
+    }
 
-    if (receivedString.indexOf("s0") != -1) { // data exists
+
+    // Convert ESP-now message to motor commands
+    if (receivedString.indexOf("s0") != -1) {
+        cmd.aux_prev = cmd.aux;
         // stupid way to read recieved string but oh well gotta go fast
         cmd.servos[0] = receivedString.substring(receivedString.indexOf("s0") + 3, receivedString.indexOf("s0") + 8).toInt();
         cmd.servos[1] = receivedString.substring(receivedString.indexOf("s1") + 3, receivedString.indexOf("s1") + 8).toInt();
@@ -311,30 +360,25 @@ void loop() {
         cmd.servos[4] = receivedString.substring(receivedString.indexOf("s4") + 3, receivedString.indexOf("s4") + 8).toInt();
         cmd.motors[0] = receivedString.substring(receivedString.indexOf("m0") + 3, receivedString.indexOf("m0") + 8).toInt();
         cmd.motors[1] = receivedString.substring(receivedString.indexOf("m1") + 3, receivedString.indexOf("m1") + 8).toInt();
+        cmd.aux = receivedString.substring(receivedString.indexOf("a") + 2, receivedString.indexOf("a") + 7).toInt();
     }
 
 
     // JOYSTICK WATCHDOG
     if (recv_watchdog > 100) { // didn't receive anything from joystick in a while
-        ESTOPPED = true; // skip what comes after
+        NO_SIGNAL = true; // don't drive motors
 
         reset_cmd(cmd);
         motA_nbytes = send_O32_cmd(0xA, CMD_SET_VOLTAGE, 0, motA_rx);
         motB_nbytes = send_O32_cmd(0xB, CMD_SET_VOLTAGE, 0, motB_rx);
-        dxl_disable();
-        if (Serial.availableForWrite() && print_timer > 10) { //not receiving joystick
-            print_timer = 0;
-            Serial.println("no stick ~~~~~~~~~~~~~~~~~~~~");
-            Serial.print(state_str);
-            Serial.println('\t');
-        }
+        set_dxl_torque_off();
     }
 
     //REENABLE MOTORS
     if (enable_motors_flag) {
         enable_motors_flag = 0;
         delay(100);
-        dxl_enable();
+        set_dxl_torque_on();
     }
 
 
@@ -342,17 +386,19 @@ void loop() {
     if(telemetry_timer > 10){
         telemetry_timer = 0;
         size_t state_str_size = sprintf(state_str,
-            "motors_on:%d\n"
+            "motor_power_on:%d\n"
+            "dxl_torque_on:%d\n"
             "dxl_pos[0]:%d\n"
             "dxl_pos[1]:%d\n"
             "dxl_pos[2]:%d\n"
             "dxl_pos[3]:%d\n"
             "dxl_pos[4]:%d\n"
-            "vbus:%d\n"
+            "vbus:%.2f\n"
             "elapsed:%d\n"
-            "cur_tot:%d\n"
+            "cur_tot:%.2f\n"
             ,
-            state.motors_on,
+            state.motor_power_on,
+            state.dxl_torque_on,
             state.dxl_pos[0],
             state.dxl_pos[1],
             state.dxl_pos[2],
@@ -370,54 +416,38 @@ void loop() {
     if (print_timer > 10 && Serial.availableForWrite()) {
         print_timer = 0;
 
-        if (motA_nbytes == 7) {
-            int16_t rpm = pad14(motA_rx[4], motA_rx[5]);
-            int16_t temp_ntc = pad14(0x0, motA_rx[6]);
-
-            Serial.print("cmd_A: ");
-            Serial.println(cmd.motors[0]);
-            Serial.print("pos_A: ");
-            Serial.println(pos_A);
-            Serial.print("temp_ntc_A: ");
-            Serial.println(temp_ntc);
-        }
-
-        if (motB_nbytes == 7) {
-            int16_t rpm = pad14(motB_rx[4], motB_rx[5]);
-            int16_t temp_ntc = pad14(0x0, motB_rx[6]);
-
-            Serial.print("cmd_B: ");
-            Serial.println(cmd.motors[1]);
-            Serial.print("pos_B: ");
-            Serial.println(pos_B);
-            Serial.print("temp_ntc_B: ");
-            Serial.println(temp_ntc);
-        }
-
         sprintf(
             print_buf,
+
             "elapsed: %ld\n"
             "looptime: %d\n"
-            // "cur_tot: %f\n"
+            "cur_tot: %.2f\n"
             // "calib_pos_A: %ld\n"
             // "calib_pos_B: %ld\n"
 
-            "servos[0]: %ld\n"
-            "servos[1]: %ld\n"
-            "servos[2]: %ld\n"
-            "servos[3]: %ld\n"
-            "servos[4]: %ld\n"
+            "s[0]: %ld\n"
+            "s[1]: %ld\n"
+            "s[2]: %ld\n"
+            "s[3]: %ld\n"
+            "s[4]: %ld\n"
+            "m[0]: %ld\n"
+            "m[1]: %ld\n"
+            "aux: %d\n"
+
+            "ntcA: %d\n"
+            "ntcB: %d\n"
+            "vbus: %.2f\n"
 
             "dxl_pos[0]: %ld\n"
             "dxl_pos[1]: %ld\n"
             "dxl_pos[2]: %ld\n"
             "dxl_pos[3]: %ld\n"
             "dxl_pos[4]: %ld\n"
-            "motors_on: %ld\t\n",
+            "dxl_torque_on: %ld\t\n",
 
             elapsed,
             looptime,
-            // cur_tot,
+            cur_tot,
             // calib_pos_A,
             // calib_pos_B,
 
@@ -426,27 +456,47 @@ void loop() {
             cmd.servos[2],
             cmd.servos[3],
             cmd.servos[4],
+            cmd.motors[0],
+            cmd.motors[1],
+            cmd.aux,
+
+            state.temp_ntcA,
+            state.temp_ntcB,
+            state.vbus,
 
             state.dxl_pos[0],
             state.dxl_pos[1],
             state.dxl_pos[2],
             state.dxl_pos[3],
             state.dxl_pos[4],
-            state.motors_on);
+            state.dxl_torque_on
+        );
+
+        if(NO_SIGNAL) Serial.println("No signal to ESTOP ~~~~~~~~~~~~~~~~~~~~");
         Serial.write(print_buf);
     }
 
 
 
     // SERIAL COMMAND
-    if (Serial.available()) { // restart if first character is 'R'
+    if (Serial.available()) {
         char user_cmd = Serial.read();
         switch (user_cmd) {
+        case 't':
+            if (state.dxl_torque_on){
+                set_dxl_torque_off();
+            }else{
+                set_dxl_torque_on();
+            }
+            break;
         case 'm':
-            if (state.motors_on)
-                dxl_disable();
-            else
-                dxl_enable();
+            if (state.motor_power_on){
+                digitalWrite(MOTOR_ON, LOW);
+                state.motor_power_on = false;
+            }else{
+                digitalWrite(MOTOR_ON, HIGH);
+                state.motor_power_on = true;
+            }
             break;
         case 'r':
             timerWrite(timer_elapsed, 0); // reset elapsed time
@@ -466,6 +516,13 @@ void loop() {
 
 
 
+
+
+
+
+//FUNCTIONS~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
 void reset_cmd(cmd_struct _cmd) {
     _cmd.servos[0] = 2048;
     _cmd.servos[1] = 2048;
@@ -474,6 +531,8 @@ void reset_cmd(cmd_struct _cmd) {
     _cmd.servos[4] = 2048;
     _cmd.motors[0] = 0;
     _cmd.motors[1] = 0;
+    _cmd.aux = 0;
+    _cmd.aux_prev = 0;
 }
 
 uint8_t send_O32_cmd(uint8_t addr, uint8_t CMD_TYPE, uint16_t data, uint8_t *rx) {
@@ -489,23 +548,23 @@ uint8_t send_O32_cmd(uint8_t addr, uint8_t CMD_TYPE, uint16_t data, uint8_t *rx)
     rs485_0.flush();
     delayMicroseconds(200); // should be enough for up to 20 bytes of response at 1Mbaud
     // uint8_t numread = rs485_0.readBytesUntil(MIN_INT8, rx, 10); //don't use because data itself might contain MIN_INT8
-    uint8_t numread = rs485_0.readBytes(rx, 7);
+    uint8_t numread = rs485_0.readBytes(rx, 9);
     return numread;
 }
 
-void dxl_enable() {
+void set_dxl_torque_on() {
     for (int i = 0; i < 5; i++) {
         dxl_write(dxl_ids[i], 64, 1); // servos torque on
     }
     // uint32_t data[5] = {1,1,1,1,1};
     // dxl_syncwrite(64, 4, data);
-    state.motors_on = true;
+    state.dxl_torque_on = true;
 }
-void dxl_disable() {
+void set_dxl_torque_off() {
     for (int i = 0; i < 5; i++) {
         dxl_write(dxl_ids[i], 64, 0); // servos torque off
     }
-    state.motors_on = false;
+    state.dxl_torque_on = false;
 }
 
 void dxl_write(uint8_t id, uint32_t reg_addr, uint32_t value) {

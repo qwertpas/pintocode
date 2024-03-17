@@ -56,10 +56,12 @@ axes_calibrated = False
 
 servos = [2048] * 5
 motors = [0]*2
+aux = 0
 
 done = False
 def main():
     global ser
+    global servos, motors, aux
 
     traj_rightarm = pd.read_csv("data/backandforth.csv")
 
@@ -79,14 +81,50 @@ def main():
         
         handle_joysticks()
 
-        [servos[0], servos[1]] = interp(traj_rightarm, elapsed, ['dxl_pos[0]', 'dxl_pos[1]'], speed=1+joy_data['lefty']) #maybe use period as parameter instead
-        [servos[3], servos[2]] = np.array([4095, 4095]) - interp(traj_rightarm, elapsed, ['dxl_pos[0]', 'dxl_pos[1]'], speed=1+joy_data['lefty'], phase_shift=0.5)
+        # [servos[0], servos[1]] = interp(traj_rightarm, elapsed, ['dxl_pos[0]', 'dxl_pos[1]'], speed=1+joy_data['lefty']) #maybe use period as parameter instead
+        # [servos[3], servos[2]] = np.array([4095, 4095]) - interp(traj_rightarm, elapsed, ['dxl_pos[0]', 'dxl_pos[1]'], speed=1+joy_data['lefty'], phase_shift=0.5)
+
+        # servos[0] = 2048 + joy_data['leftx']*2048 
+        # servos[1] = 2048 + joy_data['lefty']*2048 
+        # servos[2] = 2048 + joy_data['rightx']*2048 
+        # servos[3] = 2048 + joy_data['righty']*2048 
+
+        motors[1] = joy_data['lefty']*511
+
+        aux = 0
+        if(joy_data['circle'] and joy_data['home']):
+            aux |= (1 << 0) #set bit 0
+
 
         recv_from_estop()
         
         time.sleep(0.01)
 
     send_handler.stop()
+
+
+
+# print message cleanly to terminal, along with other station data
+def print_message(message):
+    global servos, motors, aux
+    if(len(joysticks) == 0):
+        print("gamepad disconnected")
+    else:
+        if(not axes_calibrated):
+            print("please calibrate joysticks")
+            print("move axes in a circle")
+        else:
+            joy_df = pd.DataFrame([joy_data]).round(2)
+            print(joy_df[['leftx', 'lefty', 'rightx', 'righty']].to_string(index=False))
+
+            print('s:', np.int_(servos))
+            print('m:', np.int_(motors))
+            # print('a:', format(aux, '05b'))
+            print(f" a:{aux:05b}")
+    print(message)
+    print("_—————____—————____—————____—————\t")
+
+
 
 
 def send_to_estop():
@@ -96,9 +134,12 @@ def send_to_estop():
 
     cmd_str = ""
     for i in range(5):
-        cmd_str += f"s{i}:{int(servos[i]):05}\n"
+        servo_cmd = min(max(int(servos[i]), 0), 4095)
+        cmd_str += f"s{i}:{servo_cmd:05}\n"
     for i in range(2):
-        cmd_str += f"m{i}:{int(motors[i]):05}\n"
+        motor_cmd = min(max(int(motors[i]), -511), 511)
+        cmd_str += f"m{i}:{motor_cmd:05}\n"
+    cmd_str += f"a:{aux:05b}"
     cmd_str += "#\t"
 
     # print(cmd_str)
@@ -134,24 +175,10 @@ def recv_from_estop():
 
                 message += uarttext[0:ending]
 
-                # PRINT
-                if(len(joysticks) > 0):
-                    joy_df = pd.DataFrame([joy_data]).round(2)
-                    if(not axes_calibrated):
-                        print("pls calibrate joystick by moving sticks in a circle")
-                    else:
-                        print(joy_df[['leftx', 'lefty', 'rightx', 'righty']].to_string(index=False))
-                    # print(joy_df[['-', 'circle', 'home', '+']].to_string(index=False))
-                    # print(joy_df[['dpadup', 'dpaddown', 'dpadleft', 'dpadright']].to_string(index=False))
-                    # print(joy_df[['leftbumper', 'lefttrigger', 'rightbumper', 'righttrigger']].to_string(index=False))
-                    # print(joy_df[['leftstickbutton', 'rightstickbutton']].to_string(index=False))
-
-                print(message)
-                print("_—————____—————____—————____—————\t")
+                print_message(message)
                 messagebuffer = message
 
                 messagecount += 1
-
                 message = "" #clear message
                 uarttext = uarttext[ending+len(delimiter):] #front of buffer used up
 
@@ -204,9 +231,9 @@ def handle_joysticks():
             joy_data['leftx'] = joystick.get_axis(0) 
             joy_data['lefty'] = -joystick.get_axis(1)
             joy_data['rightx'] = joystick.get_axis(2)
-            joy_data['righty'] = -joystick.get_axis(3)
-            joy_data['lefttrigger'] = joystick.get_axis(4)
-            joy_data['righttrigger'] = joystick.get_axis(5)
+            joy_data['righty'] = -joystick.get_axis(3) # -1 to 1
+            joy_data['lefttrigger'] = joystick.get_axis(4) # -1 to 1
+            joy_data['righttrigger'] = joystick.get_axis(5) # -1 to 1
             joy_data['A'] = joystick.get_button(0)
             joy_data['B'] = joystick.get_button(1)
             joy_data['X'] = joystick.get_button(2)
