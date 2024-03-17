@@ -280,7 +280,7 @@ void loop() {
             Serial.println("\t");
         }
 
-        return;
+        return; // don't do other stuff if calibration not complete
     }
 
 
