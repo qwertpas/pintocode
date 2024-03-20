@@ -55,6 +55,13 @@ typedef struct state_struct {
     uint8_t motor_power_on;
     uint8_t dxl_torque_on;
     uint16_t dxl_pos[5];
+
+    int32_t encpos1_raw;
+    int32_t encpos1_offset;
+    int32_t encpos1;
+
+    int16_t acc[3];
+    int16_t ang_rate[3];
     
     int16_t rpmA;
     uint8_t temp_ntcA;
@@ -92,6 +99,7 @@ String recv_vars = "";
 // function declarations
 void reset_cmd(cmd_struct _cmd);
 uint8_t send_O32_cmd(uint8_t addr, uint8_t CMD_TYPE, uint16_t data, uint8_t *rx);
+uint8_t send_rs485_cmd(HardwareSerial *rs485, uint8_t addr, uint8_t CMD_TYPE, uint16_t data, uint8_t *rx, uint8_t bytes_to_read);
 void set_dxl_torque_on();
 void set_dxl_torque_off();
 void dxl_write(uint8_t id, uint32_t reg_addr, uint32_t value);
@@ -140,6 +148,7 @@ void setup() {
 
     pinMode(MOTOR_ON, OUTPUT);
     digitalWrite(MOTOR_ON, LOW);
+    state.motor_power_on = false;
 
     pinMode(GPIO_D1, INPUT);
 
@@ -152,7 +161,7 @@ void setup() {
     rs485_0.setMode(UART_MODE_RS485_HALF_DUPLEX);
     rs485_0.setTimeout(1);
 
-    rs485_1.begin(115200, SERIAL_8N1);
+    rs485_1.begin(1000000, SERIAL_8N1);
     rs485_1.setPins(UART1_RX, UART1_TX, -1, UART1_DE);
     rs485_1.setMode(UART_MODE_RS485_HALF_DUPLEX);
     rs485_1.setTimeout(1);
@@ -192,6 +201,7 @@ void setup() {
     reset_cmd(cmd);
     digitalWrite(LED_BUILTIN, LED_LIT);
     digitalWrite(MOTOR_ON, HIGH);
+    state.motor_power_on = true;
 
     delay(2000); // wait for motors to initialize
     // set_dxl_torque_on();
@@ -232,7 +242,8 @@ void loop() {
     uint32_t looptime = elapsed - elapsed_prev;
 
 
-    uint32_t sns_adc = analogRead(GPIO_D1); // read current no matter what
+    //READ TOTAL CURRENT
+    uint32_t sns_adc = analogRead(GPIO_D1);
     if (sns_adc == 0) {
         cur_tot = 0;
     } else {
@@ -240,6 +251,8 @@ void loop() {
     }
     state.cur_tot = cur_tot;
 
+
+    //DXL READ POSITION
     dxl_syncread(0x0084, 4, dxl_rx);
     for (uint8_t i = 0; i < 5; i++) {
         if (dxl_rx[15 * i + 7] == 0x55) { // check if it's a return status packet
@@ -247,7 +260,41 @@ void loop() {
         }
     }
 
-    if((cmd.aux & 0b00001) && !(cmd.aux_prev & 0b00001)){ //on rising edge of aux bit 0, toggle motor power
+
+    //READ RS485 ENCODERS
+    uint8_t enc_rx[4] = {0};
+    uint8_t enc_nbytes = send_rs485_cmd(&rs485_0, 0x1, CMD_GET_POSITION, 0x0, enc_rx, 4); //rs485_1 doesnt recv anything for some reason
+    if(enc_nbytes == 4){
+        state.encpos1_raw = pad28(enc_rx[0], enc_rx[1], enc_rx[2], enc_rx[3]);
+        state.encpos1 = state.encpos1_raw - state.encpos1_offset;
+    }
+
+    //READ IMU
+    uint8_t imu_rx[12] = {0};
+    uint8_t imu_nbytes = send_rs485_cmd(&rs485_0, 0x6, CMD_GET_POSITION, 0x0, imu_rx, 12); //rs485_1 doesnt recv anything for some reason
+    if(imu_nbytes == 12){
+        state.acc[0] = pad14(imu_rx[0], imu_rx[1]);
+        state.acc[1] = pad14(imu_rx[2], imu_rx[3]);
+        state.acc[2] = pad14(imu_rx[4], imu_rx[5]);
+        state.ang_rate[0] = pad14(imu_rx[6], imu_rx[7]);
+        state.ang_rate[1] = pad14(imu_rx[8], imu_rx[9]);
+        state.ang_rate[2] = pad14(imu_rx[10], imu_rx[11]);
+    }
+    // Serial.println(imu_nbytes);
+    // Serial.println(imu_rx[0]);
+    // Serial.println(imu_rx[1]);
+    // Serial.println(imu_rx[2]);
+    // Serial.println(imu_rx[3]);
+    // Serial.println(imu_rx[4]);
+    // Serial.println(imu_rx[5]);
+    // if(enc_nbytes == 4){
+    //     state.encpos1_raw = pad28(enc_rx[0], enc_rx[1], enc_rx[2], enc_rx[3]);
+    //     state.encpos1 = state.encpos1_raw - state.encpos1_offset;
+    // }
+
+
+    //AUX COMMANDS
+    if((cmd.aux & 0b00001) && !(cmd.aux_prev & 0b00001)){ //if rising edge of aux bit 0, toggle motor power
         if(state.motor_power_on){
             state.motor_power_on = false;
             digitalWrite(MOTOR_ON, LOW);
@@ -257,7 +304,7 @@ void loop() {
         }
     }
 
-    //CALIBRATION
+    //BLDC POS CALIBRATION
     if (!NO_SIGNAL && calib_state && elapsed < 10000) { // calibration happens when calib_state != 0. If it takes more than 10 seconds, continue to operation
         switch (calib_state) {
         case 1: // extend A at low power until stall
@@ -307,7 +354,7 @@ void loop() {
 
 
 
-    // SET MOTOR POWER
+    // SET BLDC POWER
     if(!NO_SIGNAL){
         int16_t cmd_A = (DO_CALIB && pos_A > calib_pos_A) ? 0 : cmd.motors[0];
         int16_t cmd_B = (DO_CALIB && pos_B > calib_pos_B) ? 0 : cmd.motors[1];
@@ -323,7 +370,8 @@ void loop() {
         dxl_write(dxl_ids[3], 116, cmd.servos[3]);
     }
 
-    // GET O32 data
+
+    // GET BLDC DATA
     if (motA_nbytes == 9) {
         state.rpmA = pad14(motA_rx[4], motA_rx[5]);
         state.temp_ntcA = motA_rx[6];
@@ -419,24 +467,32 @@ void loop() {
         sprintf(
             print_buf,
 
-            "elapsed: %ld\n"
+            // "elapsed: %ld\n"
             "looptime: %d\n"
             "cur_tot: %.2f\n"
             // "calib_pos_A: %ld\n"
             // "calib_pos_B: %ld\n"
 
-            "s[0]: %ld\n"
-            "s[1]: %ld\n"
-            "s[2]: %ld\n"
-            "s[3]: %ld\n"
-            "s[4]: %ld\n"
-            "m[0]: %ld\n"
-            "m[1]: %ld\n"
-            "aux: %d\n"
+            // "s[0]: %ld\n"
+            // "s[1]: %ld\n"
+            // "s[2]: %ld\n"
+            // "s[3]: %ld\n"
+            // "s[4]: %ld\n"
+            // "m[0]: %ld\n"
+            // "m[1]: %ld\n"
+            // "aux: %d\n"
 
             "ntcA: %d\n"
             "ntcB: %d\n"
             "vbus: %.2f\n"
+
+            "encpos1: %ld\n"
+            "acc0: %d\n"
+            "acc1: %d\n"
+            "acc2: %d\n"
+            "rate0: %d\n"
+            "rate1: %d\n"
+            "rate2: %d\n"
 
             "dxl_pos[0]: %ld\n"
             "dxl_pos[1]: %ld\n"
@@ -445,24 +501,32 @@ void loop() {
             "dxl_pos[4]: %ld\n"
             "dxl_torque_on: %ld\t\n",
 
-            elapsed,
+            // elapsed,
             looptime,
             cur_tot,
             // calib_pos_A,
             // calib_pos_B,
 
-            cmd.servos[0],
-            cmd.servos[1],
-            cmd.servos[2],
-            cmd.servos[3],
-            cmd.servos[4],
-            cmd.motors[0],
-            cmd.motors[1],
-            cmd.aux,
+            // cmd.servos[0],
+            // cmd.servos[1],
+            // cmd.servos[2],
+            // cmd.servos[3],
+            // cmd.servos[4],
+            // cmd.motors[0],
+            // cmd.motors[1],
+            // cmd.aux,
 
             state.temp_ntcA,
             state.temp_ntcB,
             state.vbus,
+
+            state.encpos1,
+            state.acc[0],
+            state.acc[1],
+            state.acc[2],
+            state.ang_rate[0],
+            state.ang_rate[1],
+            state.ang_rate[2],
 
             state.dxl_pos[0],
             state.dxl_pos[1],
@@ -497,6 +561,9 @@ void loop() {
                 digitalWrite(MOTOR_ON, HIGH);
                 state.motor_power_on = true;
             }
+            break;
+        case 'z':
+            state.encpos1_offset = state.encpos1_raw; // zero ecnoder
             break;
         case 'r':
             timerWrite(timer_elapsed, 0); // reset elapsed time
@@ -551,6 +618,24 @@ uint8_t send_O32_cmd(uint8_t addr, uint8_t CMD_TYPE, uint16_t data, uint8_t *rx)
     uint8_t numread = rs485_0.readBytes(rx, 9);
     return numread;
 }
+
+uint8_t send_rs485_cmd(HardwareSerial *rs485, uint8_t addr, uint8_t CMD_TYPE, uint16_t data, uint8_t *rx, uint8_t bytes_to_read) {
+    while (rs485->available()) rs485->read(); // clear rx buffer
+
+    uint8_t uart2_TX[3] = {0}; // command RS485 to Ø32
+    uart2_TX[0] = CMD_TYPE | addr;
+    uart2_TX[1] = (data >> 7) & 0b01111111;
+    uart2_TX[2] = (data) & 0b01111111;
+
+    rs485->write(uart2_TX, 3);
+    rs485->flush();
+    delayMicroseconds(82 + bytes_to_read*10); // give each byte 10us if 1Mbaud
+    // delayMicroseconds(200); // give each byte 10us if 1Mbaud
+    uint8_t numread = rs485->readBytes(rx, bytes_to_read);
+    return numread;
+}
+
+
 
 void set_dxl_torque_on() {
     for (int i = 0; i < 5; i++) {

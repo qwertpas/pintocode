@@ -81,15 +81,28 @@ def main():
         
         handle_joysticks()
 
-        # [servos[0], servos[1]] = interp(traj_rightarm, elapsed, ['dxl_pos[0]', 'dxl_pos[1]'], speed=1+joy_data['lefty']) #maybe use period as parameter instead
-        # [servos[3], servos[2]] = np.array([4095, 4095]) - interp(traj_rightarm, elapsed, ['dxl_pos[0]', 'dxl_pos[1]'], speed=1+joy_data['lefty'], phase_shift=0.5)
+        speed = 2
 
+        if(joy_data['X']):
+            [servos[0], servos[1]] = interp(traj_rightarm, elapsed, ['dxl_pos[0]', 'dxl_pos[1]'], speed=speed) #maybe use period as parameter instead
+            [servos[3], servos[2]] = np.array([4095, 4095]) - interp(traj_rightarm, elapsed, ['dxl_pos[0]', 'dxl_pos[1]'], speed=speed, phase_shift=0.5)
+        elif(joy_data['Y']):
+            [servos[0], servos[1]] = interp(traj_rightarm, elapsed, ['dxl_pos[0]', 'dxl_pos[1]'], speed=speed) #maybe use period as parameter instead
+            [servos[3], servos[2]] = np.array([4095, 4095]) - interp(traj_rightarm, elapsed, ['dxl_pos[0]', 'dxl_pos[1]'], speed=speed, phase_shift=0.0)
         # servos[0] = 2048 + joy_data['leftx']*2048 
         # servos[1] = 2048 + joy_data['lefty']*2048 
         # servos[2] = 2048 + joy_data['rightx']*2048 
         # servos[3] = 2048 + joy_data['righty']*2048 
 
-        motors[1] = joy_data['lefty']*511
+        motors[0] = joy_data['lefty']*511
+
+        for i in range(5):
+            servos[i] = min(max(int(servos[i]), 0), 4095)
+        for i in range(2):
+            motors[i] = min(max(int(motors[i]), -511), 511)
+            if(abs(motors[i]) < 20):
+                motors[i] = 0
+
 
         aux = 0
         if(joy_data['circle'] and joy_data['home']):
@@ -134,11 +147,9 @@ def send_to_estop():
 
     cmd_str = ""
     for i in range(5):
-        servo_cmd = min(max(int(servos[i]), 0), 4095)
-        cmd_str += f"s{i}:{servo_cmd:05}\n"
+        cmd_str += f"s{i}:{servos[i]:05}\n"
     for i in range(2):
-        motor_cmd = min(max(int(motors[i]), -511), 511)
-        cmd_str += f"m{i}:{motor_cmd:05}\n"
+        cmd_str += f"m{i}:{motors[i]:05}\n"
     cmd_str += f"a:{aux:05b}"
     cmd_str += "#\t"
 

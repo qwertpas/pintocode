@@ -13,11 +13,12 @@ typedef struct __attribute__((packed)) {
     char serialData[64]; // Change the size according to your data needs
 } MyData;
 
-uint8_t WHICH_ADDR = 1; //<-- multiple receivers makes it unclear whether transmit succeeds, pick one address
+uint8_t WHICH_ADDR = 3; //<-- multiple receivers makes it unclear whether transmit succeeds, pick one address
 uint8_t send_to_addrs[][6] = {
     {0xC8, 0xC9, 0xA3, 0x56, 0x98, 0x6F}, // jank brain (esp8266)
-    {0x30, 0x30, 0xF9, 0x34, 0x57, 0x28}, // squirrelbrain 1 (esp32s3)
-    {0x30, 0x30, 0xF9, 0x34, 0x5A, 0x44}, // squirrelbrain 2 (esp32s3)
+    {0x30, 0x30, 0xF9, 0x34, 0x57, 0x28}, // squirrelbrain_v1 1 (esp32s3) (Recom 2A)
+    {0x30, 0x30, 0xF9, 0x34, 0x5A, 0x44}, // squirrelbrain_v1 2 (esp32s3)
+    {0x30, 0x30, 0xF9, 0x33, 0xDE, 0x4C}, // squirrelbrain_v2 3 (esp32s3) (Recom 6A)
     // use FF,FF,... to broadcast all
 };
 
@@ -126,7 +127,7 @@ void setup() {
     esp_now_register_send_cb(OnDataSent);
     esp_now_register_recv_cb(OnDataRecv);
 
-    memcpy(peerInfo.peer_addr, send_to_addrs[1], 6);
+    memcpy(peerInfo.peer_addr, send_to_addrs[WHICH_ADDR], 6);
     peerInfo.channel = 0;
     peerInfo.encrypt = false;
     if (esp_now_add_peer(&peerInfo) != ESP_OK) {
@@ -219,11 +220,11 @@ void loop() {
         send_timer = 0;
 
         if(espnow_tx_size > 0 && espnow_tx_size < 250 && station_ok && !ESTOPPED){
-            esp_now_send(send_to_addrs[1], espnow_tx, espnow_tx_size); // don't read return message here, often no_mem errror
+            esp_now_send(send_to_addrs[WHICH_ADDR], espnow_tx, espnow_tx_size); // don't read return message here, often no_mem errror
             espnow_tx_size = 0;
         }else{
             uint8_t buf[10] = {1,2,3,4,5,6,7,8,9,10};            
-            esp_now_send(send_to_addrs[1], buf, sizeof(buf)); // don't read return message here, often no_mem errror
+            esp_now_send(send_to_addrs[WHICH_ADDR], buf, sizeof(buf)); // don't read return message here, often no_mem errror
         }
         
     }
@@ -231,7 +232,7 @@ void loop() {
     // if (send_timer > 10 && station_ok && !ESTOPPED) {
     //     send_timer = 0;
     //     uint8_t buf[10] = {1,2,3,4,5,6,7,8,9,10};            
-    //     esp_now_send(send_to_addrs[1], buf, sizeof(buf)); // don't read return message here, often no_mem errror
+    //     esp_now_send(send_to_addrs[send_to_addrs], buf, sizeof(buf)); // don't read return message here, often no_mem errror
     //     // espnow_tx_size = 0;
     //     // }
     // }
