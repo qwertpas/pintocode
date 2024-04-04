@@ -38,7 +38,7 @@ int16_t pad14(uint8_t num7_0, uint8_t num7_1) {
 
 int32_t pad28(uint8_t num7_0, uint8_t num7_1, uint8_t num7_2, uint8_t num7_3) {
   int32_t res = (num7_0 << 21) | (num7_1 << 14) | (num7_2 << 7) | (num7_3);
-  if (res & 0x08000000) return res | 0xF0000000;
+  if (res & 0x08000000) return res | 0xF8000000;
   else return res;
 }
 

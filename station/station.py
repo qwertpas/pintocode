@@ -81,7 +81,7 @@ def main():
         
         handle_joysticks()
 
-        speed = 2
+        speed = 3
 
         if(joy_data['X']):
             [servos[0], servos[1]] = interp(traj_rightarm, elapsed, ['dxl_pos[0]', 'dxl_pos[1]'], speed=speed) #maybe use period as parameter instead
@@ -89,12 +89,34 @@ def main():
         elif(joy_data['Y']):
             [servos[0], servos[1]] = interp(traj_rightarm, elapsed, ['dxl_pos[0]', 'dxl_pos[1]'], speed=speed) #maybe use period as parameter instead
             [servos[3], servos[2]] = np.array([4095, 4095]) - interp(traj_rightarm, elapsed, ['dxl_pos[0]', 'dxl_pos[1]'], speed=speed, phase_shift=0.0)
+        elif(joy_data['A']):
+            servos = [2417, 2465, 1730, 1717, 2048] #lean forward
+        elif(joy_data['B']):
+            servos = [1848, 769, 3330, 2584, 2048] #lean forward
+        elif(joy_data['dpaddown']):
+            servos = [3114, 3172, 3649, 3199, 1107]
+        elif(joy_data['dpadup']):
+            servos = [3114, 3172, 3649, 3199, 1588]
+        
+        if(joy_data['rightbumper']):
+            servos[4] += 50
+            # servos[4] = 0
+        elif(joy_data['leftbumper']):
+            servos[4] -= 50
+            # servos[4] = 4095
         # servos[0] = 2048 + joy_data['leftx']*2048 
         # servos[1] = 2048 + joy_data['lefty']*2048 
         # servos[2] = 2048 + joy_data['rightx']*2048 
         # servos[3] = 2048 + joy_data['righty']*2048 
+            
+
+        '''
+        feedforward = ff_lut(enc - string_lut(motor_pos))
+        motor = P*des_pos + feedforward
+        '''
 
         motors[0] = joy_data['lefty']*511
+        motors[1] = joy_data['righty']*511
 
         for i in range(5):
             servos[i] = min(max(int(servos[i]), 0), 4095)
@@ -107,6 +129,8 @@ def main():
         aux = 0
         if(joy_data['circle'] and joy_data['home']):
             aux |= (1 << 0) #set bit 0
+        if(joy_data['circle']):
+            aux |= (1 << 1) #set but 1
 
 
         recv_from_estop()
@@ -134,6 +158,7 @@ def print_message(message):
             print('m:', np.int_(motors))
             # print('a:', format(aux, '05b'))
             print(f" a:{aux:05b}")
+    print(f"aux: {aux}")
     print(message)
     print("_—————____—————____—————____—————\t")
 

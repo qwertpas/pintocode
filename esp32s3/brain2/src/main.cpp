@@ -56,9 +56,15 @@ typedef struct state_struct {
     uint8_t dxl_torque_on;
     uint16_t dxl_pos[5];
 
+    int32_t pos_A;
+    int32_t pos_B;
+
     int32_t encpos1_raw;
     int32_t encpos1_offset;
     int32_t encpos1;
+    int32_t encpos2_raw;
+    int32_t encpos2_offset;
+    int32_t encpos2;
 
     int16_t acc[3];
     int16_t ang_rate[3];
@@ -99,7 +105,7 @@ String recv_vars = "";
 // function declarations
 void reset_cmd(cmd_struct _cmd);
 uint8_t send_O32_cmd(uint8_t addr, uint8_t CMD_TYPE, uint16_t data, uint8_t *rx);
-uint8_t send_rs485_cmd(HardwareSerial *rs485, uint8_t addr, uint8_t CMD_TYPE, uint16_t data, uint8_t *rx, uint8_t bytes_to_read);
+uint8_t send_rs485_cmd(HardwareSerial *rs485, uint8_t addr, uint8_t CMD_TYPE, uint16_t data, uint8_t *rx, uint8_t bytes_to_read, uint16_t delay);
 void set_dxl_torque_on();
 void set_dxl_torque_off();
 void dxl_write(uint8_t id, uint32_t reg_addr, uint32_t value);
@@ -229,11 +235,10 @@ uint16_t calib_cur_thres = 800;         // milliamps at stall
 int32_t calib_pos_A = 0;                // position that motor stalls
 int32_t calib_pos_B = 0;
 
-int32_t pos_A = 0;
-int32_t pos_B = 0;
-
 uint32_t elapsed;
 uint32_t elapsed_prev;
+
+uint32_t o32cnt = 0;
 
 void loop() {
     elapsed_prev = elapsed;
@@ -263,15 +268,20 @@ void loop() {
 
     //READ RS485 ENCODERS
     uint8_t enc_rx[4] = {0};
-    uint8_t enc_nbytes = send_rs485_cmd(&rs485_0, 0x1, CMD_GET_POSITION, 0x0, enc_rx, 4); //rs485_1 doesnt recv anything for some reason
+    uint8_t enc_nbytes = send_rs485_cmd(&rs485_0, 0x1, CMD_GET_POSITION, 0x0, enc_rx, 4, 82); //rs485_1 doesnt recv anything for some reason
     if(enc_nbytes == 4){
         state.encpos1_raw = pad28(enc_rx[0], enc_rx[1], enc_rx[2], enc_rx[3]);
         state.encpos1 = state.encpos1_raw - state.encpos1_offset;
+    } //add encoder 2 later
+    enc_nbytes = send_rs485_cmd(&rs485_0, 0x2, CMD_GET_POSITION, 0x0, enc_rx, 4, 82); //rs485_1 doesnt recv anything for some reason
+    if(enc_nbytes == 4){
+        state.encpos2_raw = pad28(enc_rx[0], enc_rx[1], enc_rx[2], enc_rx[3]);
+        state.encpos2 = state.encpos2_raw - state.encpos2_offset;
     }
 
     //READ IMU
     uint8_t imu_rx[12] = {0};
-    uint8_t imu_nbytes = send_rs485_cmd(&rs485_0, 0x6, CMD_GET_POSITION, 0x0, imu_rx, 12); //rs485_1 doesnt recv anything for some reason
+    uint8_t imu_nbytes = send_rs485_cmd(&rs485_0, 0x6, CMD_GET_POSITION, 0x0, imu_rx, 12, 0);
     if(imu_nbytes == 12){
         state.acc[0] = pad14(imu_rx[0], imu_rx[1]);
         state.acc[1] = pad14(imu_rx[2], imu_rx[3]);
@@ -302,6 +312,9 @@ void loop() {
             state.motor_power_on = true;
             digitalWrite(MOTOR_ON, HIGH);
         }
+    }
+    if((cmd.aux & 0b00010) && !(cmd.aux_prev & 0b00010)){ //if rising edge of aux bit 1, turn on servos
+        set_dxl_torque_on();
     }
 
     //BLDC POS CALIBRATION
@@ -356,12 +369,12 @@ void loop() {
 
     // SET BLDC POWER
     if(!NO_SIGNAL){
-        int16_t cmd_A = (DO_CALIB && pos_A > calib_pos_A) ? 0 : cmd.motors[0];
-        int16_t cmd_B = (DO_CALIB && pos_B > calib_pos_B) ? 0 : cmd.motors[1];
+        int16_t cmd_A = (DO_CALIB && state.pos_A > calib_pos_A) ? 0 : cmd.motors[0];
+        int16_t cmd_B = (DO_CALIB && state.pos_B > calib_pos_B) ? 0 : cmd.motors[1];
         motA_nbytes = send_O32_cmd(0xA, CMD_SET_VOLTAGE, twoscomplement14(cmd_A), motA_rx);
         motB_nbytes = send_O32_cmd(0xB, CMD_SET_VOLTAGE, twoscomplement14(cmd_B), motB_rx);
-        pos_A = pad28(motA_rx[0], motA_rx[1], motA_rx[2], motA_rx[3]);
-        pos_B = pad28(motB_rx[0], motB_rx[1], motB_rx[2], motB_rx[3]);
+        state.pos_A = pad28(motA_rx[0], motA_rx[1], motA_rx[2], motA_rx[3]);
+        state.pos_B = pad28(motB_rx[0], motB_rx[1], motB_rx[2], motB_rx[3]);
 
         dxl_write(dxl_ids[1], 116, cmd.servos[1]);
         dxl_write(dxl_ids[0], 116, cmd.servos[0]);
@@ -376,6 +389,7 @@ void loop() {
         state.rpmA = pad14(motA_rx[4], motA_rx[5]);
         state.temp_ntcA = motA_rx[6];
         state.vbusA = pad14(motA_rx[7], motA_rx[8]) * 3.3*5.1020f/4096.;
+        o32cnt++;
     }else{
         state.rpmA = 0;
         state.temp_ntcA = 0;
@@ -435,24 +449,32 @@ void loop() {
         telemetry_timer = 0;
         size_t state_str_size = sprintf(state_str,
             "motor_power_on:%d\n"
-            "dxl_torque_on:%d\n"
+            // "dxl_torque_on:%d\n"
             "dxl_pos[0]:%d\n"
             "dxl_pos[1]:%d\n"
             "dxl_pos[2]:%d\n"
             "dxl_pos[3]:%d\n"
             "dxl_pos[4]:%d\n"
+            "ntcA:%d\n"
+            "ntcB:%d\n"
             "vbus:%.2f\n"
+            "encpos1:%d\n"
+            "encpos2:%d\n"
             "elapsed:%d\n"
             "cur_tot:%.2f\n"
             ,
             state.motor_power_on,
-            state.dxl_torque_on,
+            // state.dxl_torque_on,
             state.dxl_pos[0],
             state.dxl_pos[1],
             state.dxl_pos[2],
             state.dxl_pos[3],
             state.dxl_pos[4],
+            state.temp_ntcA,
+            state.temp_ntcB,
             state.vbus,
+            state.encpos1,
+            state.encpos2,
             state.elapsed,
             state.cur_tot
         );
@@ -467,9 +489,9 @@ void loop() {
         sprintf(
             print_buf,
 
-            // "elapsed: %ld\n"
+            "elapsed: %ld\n"
             "looptime: %d\n"
-            "cur_tot: %.2f\n"
+            // "cur_tot: %.2f\n"
             // "calib_pos_A: %ld\n"
             // "calib_pos_B: %ld\n"
 
@@ -487,6 +509,8 @@ void loop() {
             "vbus: %.2f\n"
 
             "encpos1: %ld\n"
+            "encpos2: %ld\n"
+
             "acc0: %d\n"
             "acc1: %d\n"
             "acc2: %d\n"
@@ -499,11 +523,12 @@ void loop() {
             "dxl_pos[2]: %ld\n"
             "dxl_pos[3]: %ld\n"
             "dxl_pos[4]: %ld\n"
-            "dxl_torque_on: %ld\t\n",
+            // "dxl_torque_on: %ld\t\n",
+            "\t\n",
 
-            // elapsed,
+            elapsed,
             looptime,
-            cur_tot,
+            // cur_tot,
             // calib_pos_A,
             // calib_pos_B,
 
@@ -521,6 +546,8 @@ void loop() {
             state.vbus,
 
             state.encpos1,
+            state.encpos2,
+
             state.acc[0],
             state.acc[1],
             state.acc[2],
@@ -532,11 +559,12 @@ void loop() {
             state.dxl_pos[1],
             state.dxl_pos[2],
             state.dxl_pos[3],
-            state.dxl_pos[4],
-            state.dxl_torque_on
+            state.dxl_pos[4]
+            // state.dxl_torque_on
         );
 
         if(NO_SIGNAL) Serial.println("No signal to ESTOP ~~~~~~~~~~~~~~~~~~~~");
+        Serial.println(o32cnt);
         Serial.write(print_buf);
     }
 
@@ -564,7 +592,21 @@ void loop() {
             break;
         case 'z':
             state.encpos1_offset = state.encpos1_raw; // zero ecnoder
+            state.encpos2_offset = state.encpos2_raw; // zero ecnoder
             break;
+        case 'l': // example: "l21" sets led on encoder 2 to high
+            {
+                if(!Serial.available()) break;
+                uint8_t enc_addr = Serial.read() - '0';
+                if(!Serial.available()) break;
+                uint8_t led_cmd = Serial.read() - '0';
+                send_rs485_cmd(&rs485_0, enc_addr, CMD_SET_POSITION, led_cmd, NULL, 0, 0);
+                Serial.print("set led ");
+                Serial.print(enc_addr);
+                Serial.print(" to ");
+                Serial.println(led_cmd);
+                break;
+            }
         case 'r':
             timerWrite(timer_elapsed, 0); // reset elapsed time
             break;
@@ -603,8 +645,7 @@ void reset_cmd(cmd_struct _cmd) {
 }
 
 uint8_t send_O32_cmd(uint8_t addr, uint8_t CMD_TYPE, uint16_t data, uint8_t *rx) {
-    while (rs485_0.available())
-        rs485_0.read(); // clear rx buffer
+    while (rs485_0.available()) rs485_0.read(); // clear rx buffer
 
     uint8_t uart2_TX[3] = {0}; // command RS485 to Ø32
     uart2_TX[0] = CMD_TYPE | addr;
@@ -619,7 +660,7 @@ uint8_t send_O32_cmd(uint8_t addr, uint8_t CMD_TYPE, uint16_t data, uint8_t *rx)
     return numread;
 }
 
-uint8_t send_rs485_cmd(HardwareSerial *rs485, uint8_t addr, uint8_t CMD_TYPE, uint16_t data, uint8_t *rx, uint8_t bytes_to_read) {
+uint8_t send_rs485_cmd(HardwareSerial *rs485, uint8_t addr, uint8_t CMD_TYPE, uint16_t data, uint8_t *rx, uint8_t bytes_to_read, uint16_t delay) {
     while (rs485->available()) rs485->read(); // clear rx buffer
 
     uint8_t uart2_TX[3] = {0}; // command RS485 to Ø32
@@ -629,8 +670,9 @@ uint8_t send_rs485_cmd(HardwareSerial *rs485, uint8_t addr, uint8_t CMD_TYPE, ui
 
     rs485->write(uart2_TX, 3);
     rs485->flush();
-    delayMicroseconds(82 + bytes_to_read*10); // give each byte 10us if 1Mbaud
-    // delayMicroseconds(200); // give each byte 10us if 1Mbaud
+    // delayMicroseconds(82 + bytes_to_read*10); // give each byte 10us if 1Mbaud
+    delayMicroseconds(delay + bytes_to_read*10);
+    // delayMicroseconds(200);
     uint8_t numread = rs485->readBytes(rx, bytes_to_read);
     return numread;
 }

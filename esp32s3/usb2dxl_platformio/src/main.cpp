@@ -32,8 +32,8 @@ void setup() {
   CMD_PORT.setTimeout(1);
 
   //have to update this each time baud rate is changed in wizard
-  // DXL_PORT.begin(57600, SERIAL_8N1, UART2_RX, UART2_TX);
-  DXL_PORT.begin(1000000, SERIAL_8N1, UART2_RX, UART2_TX);
+  DXL_PORT.begin(57600, SERIAL_8N1, UART2_RX, UART2_TX);
+  // DXL_PORT.begin(1000000, SERIAL_8N1, UART2_RX, UART2_TX);
   DXL_PORT.setPins(UART2_RX, UART2_TX, GPIO_D1, UART2_DE); // CTS pin should be an unused GPIO, otherwise USB serial disappears
   DXL_PORT.setMode(UART_MODE_RS485_HALF_DUPLEX);
   DXL_PORT.setTimeout(1);
