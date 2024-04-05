@@ -1,3 +1,4 @@
+import math
 import serial.tools.list_ports
 import time
 import pygame
@@ -55,13 +56,19 @@ global axes_calibrated
 axes_calibrated = False
 
 servos = [2048] * 5
-motors = [0]*2
+motor_pwrs = [0]*2
+motor_pos = [0]*2
+
+task = 'idle'
+task_timer = 0
+
 aux = 0
 
 done = False
 def main():
     global ser
-    global servos, motors, aux
+    global servos, motor_pwrs, motor_pos, aux
+    global task, task_timer
 
     traj_rightarm = pd.read_csv("data/backandforth.csv")
 
@@ -93,10 +100,12 @@ def main():
             servos = [2417, 2465, 1730, 1717, 2048] #lean forward
         elif(joy_data['B']):
             servos = [1848, 769, 3330, 2584, 2048] #lean forward
-        elif(joy_data['dpaddown']):
-            servos = [3114, 3172, 3649, 3199, 1107]
-        elif(joy_data['dpadup']):
-            servos = [3114, 3172, 3649, 3199, 1588]
+
+
+        # if(joy_data['dpaddown']):
+        #     servos = [3114, 3172, 3649, 3199, 1107]
+        # elif(joy_data['dpadup']):
+        #     servos = [3114, 3172, 3649, 3199, 1588]
         
         if(joy_data['rightbumper']):
             servos[4] += 50
@@ -108,22 +117,42 @@ def main():
         # servos[1] = 2048 + joy_data['lefty']*2048 
         # servos[2] = 2048 + joy_data['rightx']*2048 
         # servos[3] = 2048 + joy_data['righty']*2048 
-            
+        for i in range(5):
+            servos[i] = min(max(int(servos[i]), 0), 4095)
 
         '''
         feedforward = ff_lut(enc - string_lut(motor_pos))
         motor = P*des_pos + feedforward
         '''
 
-        motors[0] = joy_data['lefty']*511
-        motors[1] = joy_data['righty']*511
+        # #position control
+        min_motor_pos = [-301, 107] #scaled up 100x on brain2 (107 becomes 10700 encoder units)
+        max_motor_pos = [-100, 202] #replace with real value
 
-        for i in range(5):
-            servos[i] = min(max(int(servos[i]), 0), 4095)
-        for i in range(2):
-            motors[i] = min(max(int(motors[i]), -511), 511)
-            if(abs(motors[i]) < 20):
-                motors[i] = 0
+        if(joy_data['dpaddown']):
+            motor_pos[0] = -301
+            task = 'bound'
+        elif(joy_data['dpadup']):
+            motor_pos[0] = -100
+
+        motor_pos[0] += joy_data['lefty'] * 2
+        motor_pos[0] = min(max(motor_pos[0], min_motor_pos[0]), max_motor_pos[0])
+
+        motor_pos[1] += joy_data['righty'] * 1
+        motor_pos[1] = min(max(motor_pos[1], min_motor_pos[1]), max_motor_pos[1])
+
+        motor_pwrs[0] = 200;
+        motor_pwrs[1] = 50;
+
+
+        #voltage control
+        # max_motor_pwr = 200;
+        # motor_pwrs[0] = joy_data['lefty']*max_motor_pwr
+        # motor_pwrs[1] = joy_data['righty']*max_motor_pwr
+        # motor_pos[0] = math.copysign(999, joy_data['lefty'],)
+        # motor_pos[1] = math.copysign(999, joy_data['righty'])
+
+        
 
 
         aux = 0
@@ -143,7 +172,7 @@ def main():
 
 # print message cleanly to terminal, along with other station data
 def print_message(message):
-    global servos, motors, aux
+    global servos, motor_pwrs, motor_pos, aux
     if(len(joysticks) == 0):
         print("gamepad disconnected")
     else:
@@ -155,7 +184,8 @@ def print_message(message):
             print(joy_df[['leftx', 'lefty', 'rightx', 'righty']].to_string(index=False))
 
             print('s:', np.int_(servos))
-            print('m:', np.int_(motors))
+            print('mw:', np.int_(motor_pwrs))
+            print('mo:', np.int_(motor_pos))
             # print('a:', format(aux, '05b'))
             print(f" a:{aux:05b}")
     print(f"aux: {aux}")
@@ -174,7 +204,9 @@ def send_to_estop():
     for i in range(5):
         cmd_str += f"s{i}:{servos[i]:05}\n"
     for i in range(2):
-        cmd_str += f"m{i}:{motors[i]:05}\n"
+        cmd_str += f"mw{i}:{motor_pwrs[i]:05}\n"
+    for i in range(2):
+        cmd_str += f"mo{i}:{motor_pos[i]:05}\n"
     cmd_str += f"a:{aux:05b}"
     cmd_str += "#\t"
 
@@ -286,6 +318,11 @@ def handle_joysticks():
             joy_data['dpadleft'] = joystick.get_button(13)
             joy_data['dpadright'] = joystick.get_button(14)
             joy_data['circle'] = joystick.get_button(15)
+
+            for axis_name in ['leftx', 'lefty', 'rightx', 'righty']: #deadband
+                if(abs(joy_data[axis_name]) < 0.02):
+                    joy_data[axis_name] = 0
+
 
             #seems like pygame needs to know the max axis value so need to move stick to max/min
             for axis_name in ['leftx', 'lefty', 'rightx', 'righty']:

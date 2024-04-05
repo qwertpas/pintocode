@@ -45,7 +45,8 @@ hw_timer_t *timer_elapsed = NULL; // keeping track of elapsed time
 
 typedef struct cmd_struct {
     uint16_t servos[6];
-    int16_t motors[2];
+    int16_t motor_pwrs[2];
+    int16_t motor_pos[2];
     uint16_t aux;
     uint16_t aux_prev;
 } cmd_struct;
@@ -58,6 +59,9 @@ typedef struct state_struct {
 
     int32_t pos_A;
     int32_t pos_B;
+
+    int16_t sent_cmd_A;
+    int16_t sent_cmd_B;
 
     int32_t encpos1_raw;
     int32_t encpos1_offset;
@@ -81,6 +85,8 @@ typedef struct state_struct {
 
     uint32_t elapsed;
     float cur_tot;
+
+    uint8_t no_signal_cnt;
 } state_struct;
 state_struct state = {0};
 
@@ -269,13 +275,14 @@ void loop() {
     //READ RS485 ENCODERS
     uint8_t enc_rx[4] = {0};
     uint8_t enc_nbytes = send_rs485_cmd(&rs485_0, 0x1, CMD_GET_POSITION, 0x0, enc_rx, 4, 82); //rs485_1 doesnt recv anything for some reason
+    float enc_alpha = 0.4; //low pass filter, lower this number the smoother
     if(enc_nbytes == 4){
-        state.encpos1_raw = pad28(enc_rx[0], enc_rx[1], enc_rx[2], enc_rx[3]);
+        state.encpos1_raw = enc_alpha * pad28(enc_rx[0], enc_rx[1], enc_rx[2], enc_rx[3]) + (1-enc_alpha)*state.encpos1_raw;
         state.encpos1 = state.encpos1_raw - state.encpos1_offset;
     } //add encoder 2 later
     enc_nbytes = send_rs485_cmd(&rs485_0, 0x2, CMD_GET_POSITION, 0x0, enc_rx, 4, 82); //rs485_1 doesnt recv anything for some reason
     if(enc_nbytes == 4){
-        state.encpos2_raw = pad28(enc_rx[0], enc_rx[1], enc_rx[2], enc_rx[3]);
+        state.encpos2_raw = enc_alpha * pad28(enc_rx[0], enc_rx[1], enc_rx[2], enc_rx[3])  + (1-enc_alpha)*state.encpos2_raw;
         state.encpos2 = state.encpos2_raw - state.encpos2_offset;
     }
 
@@ -367,20 +374,43 @@ void loop() {
 
 
 
-    // SET BLDC POWER
+    // SET BLDC AND SERVO POWERS
     if(!NO_SIGNAL){
-        int16_t cmd_A = (DO_CALIB && state.pos_A > calib_pos_A) ? 0 : cmd.motors[0];
-        int16_t cmd_B = (DO_CALIB && state.pos_B > calib_pos_B) ? 0 : cmd.motors[1];
-        motA_nbytes = send_O32_cmd(0xA, CMD_SET_VOLTAGE, twoscomplement14(cmd_A), motA_rx);
-        motB_nbytes = send_O32_cmd(0xB, CMD_SET_VOLTAGE, twoscomplement14(cmd_B), motB_rx);
+
+
+
+        // int16_t state.sent_cmd_A = (DO_CALIB && state.pos_A > calib_pos_A) ? 0 : cmd.motor_pwrs[0];
+        // int16_t state.sent_cmd_B = (DO_CALIB && state.pos_B > calib_pos_B) ? 0 : cmd.motor_pwrs[1];
+
+        float KP_A = -512/6000.0f;
+        float KP_B = 512/6000.0f;
+    
+        state.sent_cmd_A = KP_A * (cmd.motor_pos[0]*100 - state.encpos2);
+        state.sent_cmd_A = clip(state.sent_cmd_A, -abs(cmd.motor_pwrs[0]), abs(cmd.motor_pwrs[0]));
+        if(abs(state.sent_cmd_A) < 20) state.sent_cmd_A = 0;
+
+        state.sent_cmd_B = KP_B * (cmd.motor_pos[1]*100 - state.encpos1);
+        state.sent_cmd_B = clip(state.sent_cmd_B, -abs(cmd.motor_pwrs[1]), abs(cmd.motor_pwrs[1])); //should be in [-511, 511]
+        if(abs(state.sent_cmd_B) < 20) state.sent_cmd_B = 0;
+
+        // state.sent_cmd_A = 0;
+        // state.sent_cmd_B = 0;
+         
+        // motA_nbytes = send_O32_cmd(0xA, CMD_SET_VOLTAGE, twoscomplement14(0), motA_rx);
+        motB_nbytes = send_O32_cmd(0xB, CMD_SET_VOLTAGE, twoscomplement14(0), motB_rx);
+
+        motA_nbytes = send_O32_cmd(0xA, CMD_SET_VOLTAGE, twoscomplement14(state.sent_cmd_A), motA_rx);
+        // motB_nbytes = send_O32_cmd(0xB, CMD_SET_VOLTAGE, twoscomplement14(state.sent_cmd_B), motB_rx);
         state.pos_A = pad28(motA_rx[0], motA_rx[1], motA_rx[2], motA_rx[3]);
         state.pos_B = pad28(motB_rx[0], motB_rx[1], motB_rx[2], motB_rx[3]);
 
-        dxl_write(dxl_ids[1], 116, cmd.servos[1]);
-        dxl_write(dxl_ids[0], 116, cmd.servos[0]);
+        dxl_write(dxl_ids[0], 116, cmd.servos[0]);//set position
+        dxl_write(dxl_ids[1], 116, cmd.servos[1]); 
         dxl_write(dxl_ids[2], 116, cmd.servos[2]);
-        dxl_write(dxl_ids[4], 116, cmd.servos[4]);
         dxl_write(dxl_ids[3], 116, cmd.servos[3]);
+        dxl_write(dxl_ids[4], 116, cmd.servos[4]);
+    }else{
+        state.no_signal_cnt++;
     }
 
 
@@ -411,6 +441,7 @@ void loop() {
     }
 
 
+    //TODO: MOVE INSIDE INTRRUPT TO AVOID STRING STUFF EVERY LOOP
     // Convert ESP-now message to motor commands
     if (receivedString.indexOf("s0") != -1) {
         cmd.aux_prev = cmd.aux;
@@ -420,17 +451,22 @@ void loop() {
         cmd.servos[2] = receivedString.substring(receivedString.indexOf("s2") + 3, receivedString.indexOf("s2") + 8).toInt();
         cmd.servos[3] = receivedString.substring(receivedString.indexOf("s3") + 3, receivedString.indexOf("s3") + 8).toInt();
         cmd.servos[4] = receivedString.substring(receivedString.indexOf("s4") + 3, receivedString.indexOf("s4") + 8).toInt();
-        cmd.motors[0] = receivedString.substring(receivedString.indexOf("m0") + 3, receivedString.indexOf("m0") + 8).toInt();
-        cmd.motors[1] = receivedString.substring(receivedString.indexOf("m1") + 3, receivedString.indexOf("m1") + 8).toInt();
+        cmd.motor_pwrs[0] = receivedString.substring(receivedString.indexOf("mw0") + 4, receivedString.indexOf("mw0") + 9).toInt();
+        cmd.motor_pwrs[1] = receivedString.substring(receivedString.indexOf("mw1") + 4, receivedString.indexOf("mw1") + 9).toInt();
+        cmd.motor_pos[0] = receivedString.substring(receivedString.indexOf("mo0") + 4, receivedString.indexOf("mo0") + 9).toInt();
+        cmd.motor_pos[1] = receivedString.substring(receivedString.indexOf("mo1") + 4, receivedString.indexOf("mo1") + 9).toInt();
         cmd.aux = receivedString.substring(receivedString.indexOf("a") + 2, receivedString.indexOf("a") + 7).toInt();
+
     }
 
 
     // JOYSTICK WATCHDOG
-    if (recv_watchdog > 100) { // didn't receive anything from joystick in a while
+    if (recv_watchdog > 200) { // didn't receive anything from joystick in a while
         NO_SIGNAL = true; // don't drive motors
 
         reset_cmd(cmd);
+        state.sent_cmd_A = 0;
+        state.sent_cmd_B = 0;
         motA_nbytes = send_O32_cmd(0xA, CMD_SET_VOLTAGE, 0, motA_rx);
         motB_nbytes = send_O32_cmd(0xB, CMD_SET_VOLTAGE, 0, motB_rx);
         set_dxl_torque_off();
@@ -489,8 +525,8 @@ void loop() {
         sprintf(
             print_buf,
 
-            "elapsed: %ld\n"
-            "looptime: %d\n"
+            // "elapsed: %ld\n"
+            // "looptime: %d\n"
             // "cur_tot: %.2f\n"
             // "calib_pos_A: %ld\n"
             // "calib_pos_B: %ld\n"
@@ -500,9 +536,13 @@ void loop() {
             // "s[2]: %ld\n"
             // "s[3]: %ld\n"
             // "s[4]: %ld\n"
-            // "m[0]: %ld\n"
-            // "m[1]: %ld\n"
+            "mw[0]: %ld\n"
+            "mw[1]: %ld\n"
+            "mo[0]: %ld\n"
+            "mo[1]: %ld\n"
             // "aux: %d\n"
+
+            // "nosigcnt: %d\n"
 
             "ntcA: %d\n"
             "ntcB: %d\n"
@@ -511,12 +551,15 @@ void loop() {
             "encpos1: %ld\n"
             "encpos2: %ld\n"
 
-            "acc0: %d\n"
-            "acc1: %d\n"
-            "acc2: %d\n"
-            "rate0: %d\n"
-            "rate1: %d\n"
-            "rate2: %d\n"
+            "sentA: %d\n"
+            "sentB: %d\n"
+
+            // "acc0: %d\n"
+            // "acc1: %d\n"
+            // "acc2: %d\n"
+            // "rate0: %d\n"
+            // "rate1: %d\n"
+            // "rate2: %d\n"
 
             "dxl_pos[0]: %ld\n"
             "dxl_pos[1]: %ld\n"
@@ -526,20 +569,19 @@ void loop() {
             // "dxl_torque_on: %ld\t\n",
             "\t\n",
 
-            elapsed,
-            looptime,
-            // cur_tot,
-            // calib_pos_A,
-            // calib_pos_B,
 
             // cmd.servos[0],
             // cmd.servos[1],
             // cmd.servos[2],
             // cmd.servos[3],
             // cmd.servos[4],
-            // cmd.motors[0],
-            // cmd.motors[1],
+            cmd.motor_pwrs[0],
+            cmd.motor_pwrs[1],
+            cmd.motor_pos[0],
+            cmd.motor_pos[1],
             // cmd.aux,
+
+            // state.no_signal_cnt,
 
             state.temp_ntcA,
             state.temp_ntcB,
@@ -548,12 +590,15 @@ void loop() {
             state.encpos1,
             state.encpos2,
 
-            state.acc[0],
-            state.acc[1],
-            state.acc[2],
-            state.ang_rate[0],
-            state.ang_rate[1],
-            state.ang_rate[2],
+            state.sent_cmd_A,
+            state.sent_cmd_B,
+
+            // state.acc[0],
+            // state.acc[1],
+            // state.acc[2],
+            // state.ang_rate[0],
+            // state.ang_rate[1],
+            // state.ang_rate[2],
 
             state.dxl_pos[0],
             state.dxl_pos[1],
@@ -564,7 +609,7 @@ void loop() {
         );
 
         if(NO_SIGNAL) Serial.println("No signal to ESTOP ~~~~~~~~~~~~~~~~~~~~");
-        Serial.println(o32cnt);
+        // Serial.println(o32cnt);
         Serial.write(print_buf);
     }
 
@@ -638,8 +683,8 @@ void reset_cmd(cmd_struct _cmd) {
     _cmd.servos[2] = 2048;
     _cmd.servos[3] = 2048;
     _cmd.servos[4] = 2048;
-    _cmd.motors[0] = 0;
-    _cmd.motors[1] = 0;
+    _cmd.motor_pwrs[0] = 0;
+    _cmd.motor_pwrs[1] = 0;
     _cmd.aux = 0;
     _cmd.aux_prev = 0;
 }
