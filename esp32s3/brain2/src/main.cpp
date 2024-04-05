@@ -397,11 +397,11 @@ void loop() {
         // state.sent_cmd_B = 0;
          
         // motA_nbytes = send_O32_cmd(0xA, CMD_SET_VOLTAGE, twoscomplement14(0), motA_rx);
-        motB_nbytes = send_O32_cmd(0xB, CMD_SET_VOLTAGE, twoscomplement14(0), motB_rx);
-
         motA_nbytes = send_O32_cmd(0xA, CMD_SET_VOLTAGE, twoscomplement14(state.sent_cmd_A), motA_rx);
-        // motB_nbytes = send_O32_cmd(0xB, CMD_SET_VOLTAGE, twoscomplement14(state.sent_cmd_B), motB_rx);
         state.pos_A = pad28(motA_rx[0], motA_rx[1], motA_rx[2], motA_rx[3]);
+
+        // motB_nbytes = send_O32_cmd(0xB, CMD_SET_VOLTAGE, twoscomplement14(0), motB_rx);
+        motB_nbytes = send_O32_cmd(0xB, CMD_SET_VOLTAGE, twoscomplement14(state.sent_cmd_B), motB_rx);
         state.pos_B = pad28(motB_rx[0], motB_rx[1], motB_rx[2], motB_rx[3]);
 
         dxl_write(dxl_ids[0], 116, cmd.servos[0]);//set position

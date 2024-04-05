@@ -79,11 +79,7 @@ def main():
 
     traj_rightarm = pd.read_csv("data/backandforth.csv")
 
-    servos = [1012, 1216, 2815, 3008, 2471]
-    motor_pwrs = [0,0]
-
     send_handler = PeriodicSleeper(send_to_estop, 0.01)
-    
 
     start_time = timer()
     while not done:
@@ -101,16 +97,6 @@ def main():
         handle_joysticks()
         recv_from_estop()
 
-        poslib = [
-            { #top motor A
-                'extend': 25,
-                'retract': 270, #actually -37 but might overshoot and overwrap
-            },
-            { #bottom motor B
-                'extend': 202,
-                'retract': 107,
-            }
-        ]
 
         if(task == 'idle'):
             task_starttime = elapsed
@@ -121,55 +107,22 @@ def main():
                     task = 'recoverR'
             elif(joy_data['dpaddown']):
                 task = 'sit'
-            # elif(joy_data['dpadleft']):
-            #     task = 'turnleft'
-            # elif(joy_data['dpadright']):
-            #     task = 'turnright'
+            elif(joy_data['dpadleft']):
+                task = 'turnleft'
+            elif(joy_data['dpadright']):
+                task = 'turnright'
             elif(joy_data['dpadup']):
                 task = 'bound'
-            else: #voltage control
-                motor_pwrs[0] = joy_data['lefty']*200
-                motor_pwrs[1] = joy_data['righty']*200
-                motor_pos[0] = math.copysign(999, joy_data['lefty'])
-                motor_pos[1] = math.copysign(999, joy_data['righty'])
 
 
+
+        min_motor_pos = [-301, 107] #scaled up 100x on brain2 (107 becomes 10700 encoder units)
+        max_motor_pos = [-100, 202] #replace with real value
         
-
-        if(task == 'sit'):
-            if(task_elapsed < 300):
-                servos = [1012, 1216, 2815, 3008, 2471]
-            elif(task_elapsed < 600):
-                servos = [1586, 503, 3523, 2381, 2471]
-            else:
-                task = 'idle'
-
-
+        
         if(task == 'bound'):
-            if(task_elapsed < 30):
-                # motor_pos[0] = poslib[0]['extend']
-                # motor_pwrs[0] = 0
-                servos = [1586, 503, 3523, 2381, 2471] #up
-                # servos = [2742, 2053, 1987, 990, 3072] #out
-                # motor_pos[1] = poslib[1]['extend']
-                # motor_pwrs[1] = 100
+            if(task_elapsed < 100):
 
-            elif(task_elapsed < 80):
-                servos = [2742, 2053, 1987, 990, 3072] #out
-            elif(task_elapsed < 260):
-                motor_pos[0] = poslib[0]['extend']
-                motor_pwrs[0] = 200
-                # servos = [1915, 1644, 2480, 2208, 2471]
-            elif(task_elapsed < 450):
-                motor_pos[0] = poslib[0]['retract']
-                motor_pwrs[0] = 200
-                servos = [1915, 1644, 2480, 2208, 2471]
-                
-            elif(task_elapsed < 500):
-                servos = [1012, 1216, 2815, 3008, 2471]
-            else:
-                task = 'idle'
-                
 
         if(joy_data['X']):
             servos[4] = 3072
@@ -177,21 +130,53 @@ def main():
             servos[4] = 2048
 
         
+
+
+        # speed = 3
+
+        # shifted walking
+        #     [servos[0], servos[1]] = interp(traj_rightarm, elapsed, ['dxl_pos[0]', 'dxl_pos[1]'], speed=speed) #maybe use period as parameter instead
+        #     [servos[3], servos[2]] = np.array([4095, 4095]) - interp(traj_rightarm, elapsed, ['dxl_pos[0]', 'dxl_pos[1]'], speed=speed, phase_shift=0.5)
+        # arms up and down same time
+        #     [servos[0], servos[1]] = interp(traj_rightarm, elapsed, ['dxl_pos[0]', 'dxl_pos[1]'], speed=speed) #maybe use period as parameter instead
+        #     [servos[3], servos[2]] = np.array([4095, 4095]) - interp(traj_rightarm, elapsed, ['dxl_pos[0]', 'dxl_pos[1]'], speed=speed, phase_shift=0.0)
+        # lean forward
+        #     servos = [2417, 2465, 1730, 1717, 2048] #lean forward
+        # up
+        #     servos = [1848, 769, 3330, 2584, 2048] #lean forward
+
+
+        # if(joy_data['dpaddown']):
+        #     servos = [3114, 3172, 3649, 3199, 1107]
+        # elif(joy_data['dpadup']):
+        #     servos = [3114, 3172, 3649, 3199, 1588]
+        
+        # if(joy_data['rightbumper']):
+        #     servos[4] += 50
+            # servos[4] = 0
+        # elif(joy_data['leftbumper']):
+        #     servos[4] -= 50
+            # servos[4] = 4095
+        # servos[0] = 2048 + joy_data['leftx']*2048 
+        # servos[1] = 2048 + joy_data['lefty']*2048 
+        # servos[2] = 2048 + joy_data['rightx']*2048 
+        # servos[3] = 2048 + joy_data['righty']*2048 
         for i in range(5):
             servos[i] = min(max(int(servos[i]), 0), 4095)
 
-        #position control
+        '''
+        feedforward = ff_lut(enc - string_lut(motor_pos))
+        motor = P*des_pos + feedforward
+        '''
+
+        
+
+        # #position control
         # if(joy_data['dpaddown']):
-        #     motor_pos[0] = 270
-        #     motor_pwrs[0] = 100;
+        #     motor_pos[0] = -301
+        #     task = 'bound'
         # elif(joy_data['dpadup']):
-        #     motor_pos[0] = 25
-        #     motor_pwrs[0] = 100;
-        # else:
-        #     motor_pwrs[0] = joy_data['lefty']*200
-        #     motor_pwrs[1] = joy_data['righty']*200
-        #     motor_pos[0] = math.copysign(999, joy_data['lefty'])
-        #     motor_pos[1] = math.copysign(999, joy_data['righty'])
+        #     motor_pos[0] = -100
 
         # motor_pos[0] += joy_data['lefty'] * 2
         # motor_pos[0] = min(max(motor_pos[0], min_motor_pos[0]), max_motor_pos[0])
@@ -199,24 +184,30 @@ def main():
         # motor_pos[1] += joy_data['righty'] * 1
         # motor_pos[1] = min(max(motor_pos[1], min_motor_pos[1]), max_motor_pos[1])
 
+        # motor_pwrs[0] = 200;
         # motor_pwrs[1] = 50;
 
 
-        
+        #voltage control
+        max_motor_pwr = 100;
+        motor_pwrs[0] = joy_data['lefty']*100
+        motor_pwrs[1] = joy_data['righty']*500
+        motor_pos[0] = math.copysign(999, joy_data['lefty'])
+        motor_pos[1] = math.copysign(999, joy_data['righty'])
 
         if(telemetry['vbus'] < 10):
             print("LOW BATTERY")
-            # for i in range(5):
-            #     servos[i] = 2048
+            for i in range(5):
+                servos[i] = 0
             for i in range(2):
                 motor_pwrs[i] = 0
                 
 
         aux = 0
         if(joy_data['circle'] and joy_data['home']):
-            aux |= (1 << 0) #set bit 0 for toggle motor power
+            aux |= (1 << 0) #set bit 0
         if(joy_data['circle']):
-            aux |= (1 << 1) #set bit 1 for enable servo torque
+            aux |= (1 << 1) #set but 1
 
 
         
@@ -245,7 +236,6 @@ def print_message(message):
             # print('a:', format(aux, '05b'))
             print(f" a:{aux:05b}")
     print(f"aux: {aux}")
-    print(f"task: {task}")
     print(message)
     print("_—————____—————____—————____—————\t")
 
@@ -301,7 +291,7 @@ def recv_from_estop():
 
                 print_message(message)
                 messagebuffer = message
-                # print(messagebuffer)
+                print(messagebuffer)
 
                 lines = messagebuffer.split('\n')
                 for line in lines:
