@@ -383,7 +383,7 @@ void loop() {
         // int16_t state.sent_cmd_B = (DO_CALIB && state.pos_B > calib_pos_B) ? 0 : cmd.motor_pwrs[1];
 
         float KP_A = -512/6000.0f;
-        float KP_B = 512/6000.0f;
+        float KP_B = -512/6000.0f;
     
         state.sent_cmd_A = KP_A * (cmd.motor_pos[0]*100 - state.encpos2);
         state.sent_cmd_A = clip(state.sent_cmd_A, -abs(cmd.motor_pwrs[0]), abs(cmd.motor_pwrs[0]));
@@ -557,7 +557,7 @@ void loop() {
             // "acc0: %d\n"
             // "acc1: %d\n"
             // "acc2: %d\n"
-            // "rate0: %d\n"
+            "rate0: %d\n"
             // "rate1: %d\n"
             // "rate2: %d\n"
 
@@ -596,7 +596,7 @@ void loop() {
             // state.acc[0],
             // state.acc[1],
             // state.acc[2],
-            // state.ang_rate[0],
+            state.ang_rate[0],
             // state.ang_rate[1],
             // state.ang_rate[2],
 

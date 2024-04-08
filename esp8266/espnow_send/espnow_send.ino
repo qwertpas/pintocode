@@ -7,7 +7,7 @@ typedef struct __attribute__((packed)) {
   char serialData[64]; // Change the size according to your data needs
 } MyData;
 
-//uint8_t recv_addr[] = {0xC8, 0xC9, 0xA3, 0x56, 0x98, 0x6F}; //esp8266 first brain
+uint8_t recv_addr[] = {0xC8, 0xC9, 0xA3, 0x56, 0x98, 0x6F}; //esp8266 first brain
 //uint8_t recv_addr[] = {0x30, 0x30, 0xF9, 0x34, 0x57, 0x28}; //esp32s3 xiao pcb brain 
 //uint8_t recv_addr[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}; //broadcast all
 
@@ -45,10 +45,10 @@ void setup() {
   if(esp_now_init() == 0){
     esp_now_set_self_role(ESP_NOW_ROLE_CONTROLLER);
     esp_now_register_send_cb(OnDataSent);
-//    esp_now_add_peer(recv_addr, ESP_NOW_ROLE_SLAVE, 1, NULL, 0);
-    for (uint8_t i = 0; i < num_recv; i++) {
-      esp_now_add_peer(recv_addrs[i], ESP_NOW_ROLE_SLAVE, 1, NULL, 0);
-    }
+    esp_now_add_peer(recv_addr, ESP_NOW_ROLE_SLAVE, 1, NULL, 0);
+//    for (uint8_t i = 0; i < num_recv; i++) {
+//      esp_now_add_peer(recv_addrs[i], ESP_NOW_ROLE_SLAVE, 1, NULL, 0);
+//    }
   }
 
   pinMode(LED_BUILTIN, OUTPUT);
@@ -74,10 +74,10 @@ void loop() {
     memset(&myData, 0, sizeof(myData));
     serialInput.toCharArray(myData.serialData, sizeof(myData.serialData));
 
-//    esp_now_send(recv_addr, (uint8_t *)&myData, sizeof(myData));
-    for (uint8_t i = 0; i < num_recv; i++) {
-      esp_now_send(recv_addrs[i], (uint8_t *)&myData, sizeof(myData));
-    }
+    esp_now_send(recv_addr, (uint8_t *)&myData, sizeof(myData));
+//    for (uint8_t i = 0; i < num_recv; i++) {
+//      esp_now_send(recv_addrs[i], (uint8_t *)&myData, sizeof(myData));
+//    }
    
   }else{
     blink_period = 1000; //long blink for no input data

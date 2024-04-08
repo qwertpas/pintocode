@@ -70,12 +70,14 @@ task_starttime = 0
 
 aux = 0
 
+low_battery = False
+
 done = False
 def main():
     global ser
     global servos, motor_pwrs, motor_pos, aux
     global task, task_starttime
-    global telemetry
+    global telemetry, low_battery
 
     traj_rightarm = pd.read_csv("data/backandforth.csv")
 
@@ -103,35 +105,52 @@ def main():
 
         poslib = [
             { #top motor A
-                'extend': 25,
-                'retract': 270, #actually -37 but might overshoot and overwrap
+                # 'extend': 25,
+                'extend': -74,
+                # 'retract': 270, #actually -37 but might overshoot and overwrap
+                'retract': 175, #actually -37 but might overshoot and overwrap
             },
             { #bottom motor B
-                'extend': 202,
-                'retract': 107,
+                'extend': 105,
+                'retract': -10,
             }
         ]
 
         if(task == 'idle'):
             task_starttime = elapsed
             if(joy_data['B']):
-                if(joy_data['dpadleft']):
-                    task = 'recoverL'
-                elif(joy_data['dpadright']):
-                    task = 'recoverR'
+                # if(joy_data['dpadleft']):
+                #     task = 'recoverleft'
+                # elif(joy_data['dpadright']):
+                #     task = 'recoverright'
+                # servos = [2417, 2465, 1730, 1717, 2048]
+                servos[0] = 2417
+                servos[1] = 2465
+                servos[2] = 1730
+                servos[3] = 1717
+            elif(joy_data['A']):
+                servos[0] = 1369
+                servos[1] = 459
+                servos[2] = 3614
+                servos[3] = 2591
             elif(joy_data['dpaddown']):
                 task = 'sit'
-            # elif(joy_data['dpadleft']):
-            #     task = 'turnleft'
-            # elif(joy_data['dpadright']):
-            #     task = 'turnright'
+            elif(joy_data['dpadleft']):
+                task = 'turnleft'
+            elif(joy_data['dpadright']):
+                task = 'turnright'
             elif(joy_data['dpadup']):
                 task = 'bound'
+            elif(joy_data['+']):
+                task = 'boogie'
             else: #voltage control
-                motor_pwrs[0] = joy_data['lefty']*200
-                motor_pwrs[1] = joy_data['righty']*200
+                motor_pwrs[0] = joy_data['lefty']*150
+                motor_pwrs[1] = joy_data['righty']*150
                 motor_pos[0] = math.copysign(999, joy_data['lefty'])
                 motor_pos[1] = math.copysign(999, joy_data['righty'])
+                motor_pos[0] = clip(math.copysign(999, joy_data['lefty']), poslib[0]['extend'], poslib[0]['retract'])
+                motor_pos[1] = clip(math.copysign(999, -joy_data['righty']), poslib[1]['extend'], poslib[1]['retract'])
+                # motor_pos[1] = math.copysign(999, joy_data['righty'])
 
 
         
@@ -144,31 +163,129 @@ def main():
             else:
                 task = 'idle'
 
+        if(task == 'boogie'):
+            speed = 1.5
+            if(task_elapsed < 100):
+                [servos[0], servos[1]] = interp(traj_rightarm, elapsed, ['dxl_pos[0]', 'dxl_pos[1]'], speed=speed) #maybe use period as parameter instead
+                [servos[3], servos[2]] = np.array([4095, 4095]) - interp(traj_rightarm, elapsed, ['dxl_pos[0]', 'dxl_pos[1]'], speed=speed, phase_shift=0.5)
+                servos[4] = 3072
+                # motor_pos[1] = poslib[1]['extend']
+                # motor_pwrs[1] = 150
+            if(task_elapsed < 200):
+                [servos[0], servos[1]] = interp(traj_rightarm, elapsed, ['dxl_pos[0]', 'dxl_pos[1]'], speed=speed) #maybe use period as parameter instead
+                [servos[3], servos[2]] = np.array([4095, 4095]) - interp(traj_rightarm, elapsed, ['dxl_pos[0]', 'dxl_pos[1]'], speed=speed, phase_shift=0.5)
+                servos[4] = 3072
+                # motor_pos[1] = poslib[1]['retract']
+                # motor_pwrs[1] = 150
+            else:
+                task = 'idle'
+
+        # if(task == 'bound'):
+        #     if(task_elapsed < 30):
+        #         # motor_pos[0] = poslib[0]['extend']
+        #         # motor_pwrs[0] = 0
+        #         servos = [1586, 503, 3523, 2381, 2471] #up
+        #         # servos = [2742, 2053, 1987, 990, 3072] #out
+        #         # motor_pos[1] = poslib[1]['extend']
+        #         # motor_pwrs[1] = 100
+
+        #     elif(task_elapsed < 80):
+        #         servos = [2742, 2053, 1987, 990, 3072] #out
+        #     elif(task_elapsed < 260):
+        #         motor_pos[0] = poslib[0]['extend']
+        #         motor_pwrs[0] = 150
+        #         motor_pos[1] = poslib[1]['extend']
+        #         motor_pwrs[1] = 150
+        #         # servos = [1915, 1644, 2480, 2208, 2471]
+        #     elif(task_elapsed < 500):
+        #         motor_pos[0] = poslib[0]['retract']
+        #         motor_pwrs[0] = 150
+        #         motor_pos[1] = poslib[1]['retract']
+        #         motor_pwrs[1] = 150
+        #         servos = [1915, 1644, 2480, 2208, 2471]
+                
+        #     elif(task_elapsed < 550):
+        #         servos = [1012, 1216, 2815, 3008, 2471]
+        #     else:
+        #         task = 'idle'
 
         if(task == 'bound'):
             if(task_elapsed < 30):
-                # motor_pos[0] = poslib[0]['extend']
-                # motor_pwrs[0] = 0
                 servos = [1586, 503, 3523, 2381, 2471] #up
-                # servos = [2742, 2053, 1987, 990, 3072] #out
-                # motor_pos[1] = poslib[1]['extend']
-                # motor_pwrs[1] = 100
-
             elif(task_elapsed < 80):
                 servos = [2742, 2053, 1987, 990, 3072] #out
-            elif(task_elapsed < 260):
+            elif(task_elapsed < 300):
                 motor_pos[0] = poslib[0]['extend']
-                motor_pwrs[0] = 200
+                motor_pwrs[0] = 150
+                # motor_pos[1] = poslib[1]['extend']
+                # motor_pwrs[1] = 150
                 # servos = [1915, 1644, 2480, 2208, 2471]
-            elif(task_elapsed < 450):
+            elif(task_elapsed < 550):
                 motor_pos[0] = poslib[0]['retract']
-                motor_pwrs[0] = 200
+                motor_pwrs[0] = 150
+                # motor_pos[1] = poslib[1]['retract']
+                # motor_pwrs[1] = 150
                 servos = [1915, 1644, 2480, 2208, 2471]
+                # servos = [1012, 1216, 2815, 3008, 2471] #home retracted
                 
-            elif(task_elapsed < 500):
-                servos = [1012, 1216, 2815, 3008, 2471]
+                
+            elif(task_elapsed < 750):
+                servos = [1012, 1216, 2815, 3008, 2471] #home retracted
+                for stick in joysticks.values():
+                    stick.rumble(0.7, 0.0, 100) #indicate calibration done
             else:
                 task = 'idle'
+
+        if(task == 'turnleft'):
+            speed = 0.8
+            if(task_elapsed < 60/speed):
+                # servos = [2048-250, 2048-500, 2818, 3010, 2336] #right arm up 
+                servos = [1012, 1216, 2300, 2200, 2048] #left arm up, unexpand
+            elif(task_elapsed < 300/speed):
+                servos = [1012, 1216, 2300, 2200, 3072] #expand
+            elif(task_elapsed < 400/speed):
+                servos = [1012, 1216, 2818, 3010, 3072] #right arm down, left arm up, still expanded
+            elif(task_elapsed < 500/speed):
+                servos = [1752, 1507, 2818, 3010, 2471] #right arm down, left arm up, unexpand
+            elif(task_elapsed < 600/speed):
+                servos = [1012, 1216, 2815, 3008, 2048] #home retracted
+            else:
+                task = 'idle'
+
+        if(task == 'turnright'):
+            speed = 0.8
+            if(task_elapsed < 60/speed):
+                servos = [1752, 1507, 2818, 3010, 2336] #right arm up 
+            elif(task_elapsed < 300/speed):
+                servos = [1752, 1507, 2818, 3010, 3072] #expand
+            elif(task_elapsed < 400/speed):
+                servos = [1012, 1216, 2818, 3010, 3072] #right arm down, left arm up, still expanded
+            elif(task_elapsed < 500/speed):
+                servos = [1012, 1216, 2300, 2200, 2471] #right arm down, left arm up, unexpand
+            elif(task_elapsed < 600/speed):
+                servos = [1012, 1216, 2815, 3008, 2471] #home retracted
+            else:
+                task = 'idle'
+
+        # if(task == 'turnright'):
+        #     if(task_elapsed < 600):
+        #         [servos[0], servos[1]] = interp(traj_rightarm, task_elapsed, ['dxl_pos[0]', 'dxl_pos[1]'], speed=2) #maybe use period as parameter instead
+        #         [servos[3], servos[2]] = np.array([4095, 4095]) - interp(traj_rightarm, task_elapsed, ['dxl_pos[0]', 'dxl_pos[1]'], speed=2, phase_shift=0.5)
+        #         servos[4] = 2048 + 1024*np.sin(task_elapsed / 150) + 512
+        #     elif(task_elapsed < 700):
+        #         servos = [1012, 1216, 2815, 3008, 2700]
+        #     else:
+        #         task = 'idle'
+
+        # if(task == 'turnleft'):
+        #     if(task_elapsed < 600):
+        #         [servos[0], servos[1]] = interp(traj_rightarm, task_elapsed, ['dxl_pos[0]', 'dxl_pos[1]'], speed=2) #maybe use period as parameter instead
+        #         [servos[3], servos[2]] = np.array([4095, 4095]) - interp(traj_rightarm, task_elapsed, ['dxl_pos[0]', 'dxl_pos[1]'], speed=2, phase_shift=0.5)
+        #         servos[4] = 2048 - 1024*np.sin(task_elapsed / 150) + 512
+        #     elif(task_elapsed < 700):
+        #         servos = [1012, 1216, 2815, 3008, 2700]
+        #     else:
+        #         task = 'idle'
                 
 
         if(joy_data['X']):
@@ -178,7 +295,7 @@ def main():
 
         
         for i in range(5):
-            servos[i] = min(max(int(servos[i]), 0), 4095)
+            servos[i] = clip(int(servos[i]), 0, 4095)
 
         #position control
         # if(joy_data['dpaddown']):
@@ -204,10 +321,12 @@ def main():
 
         
 
-        if(telemetry['vbus'] < 10):
+        low_battery_threshold = 10.5
+        if((elapsed > 1000 and telemetry['motor_power_on']==1 and telemetry['vbus'] > 0 and telemetry['vbus'] < low_battery_threshold) or low_battery):
             print("LOW BATTERY")
-            # for i in range(5):
-            #     servos[i] = 2048
+            low_battery = True
+            for i in range(5):
+                servos[i] = 2048
             for i in range(2):
                 motor_pwrs[i] = 0
                 
@@ -418,6 +537,18 @@ def handle_joysticks():
 
             break #assume only one joystick
 
+
+def clip(x, _min, _max):
+    if(_min > _max): #swap if min and max are reversed
+        temp = _min
+        _min = _max
+        _max = temp
+    if(x < _min):
+        return _min
+    elif(x > _max):
+        return _max
+    else:
+        return x
 
 if(__name__ == "__main__"):
     main()
