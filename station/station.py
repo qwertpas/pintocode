@@ -224,6 +224,30 @@ def main():
         #     else:
         #         task = 'idle'
 
+        if(task == 'bound'):
+            power = 150
+            if(task_elapsed < 50):
+                servos = [1586, 503, 3523, 2381, 3300] #up
+            elif(task_elapsed < 100):
+                servos = [2968, 2459, 1676, 969, 3072] #out
+            elif(task_elapsed < 350):
+                motor_pos[0] = poslib[0]['extend']
+                motor_pwrs[0] = power
+                motor_pos[1] = poslib[1]['extend']
+                motor_pwrs[1] = power
+            elif(task_elapsed < 550):
+                motor_pos[0] = poslib[0]['retract']
+                motor_pwrs[0] = power
+                motor_pos[1] = poslib[1]['retract']
+                motor_pwrs[1] = power
+                servos = [1915, 1644, 2480, 2208, 3300]
+            elif(task_elapsed < 650):
+                servos = [1012, 1216, 2815, 3008, 3900] #home retracted
+                for stick in joysticks.values():
+                    stick.rumble(0.7, 0.0, 100)
+            else:
+                task = 'idle'
+
         if(task == 'longjump'):
             if(task_elapsed < 30):
                 servos = [1586, 503, 3523, 2381, 3900] #up
@@ -234,32 +258,30 @@ def main():
                 motor_pwrs[0] = 250
                 motor_pos[1] = poslib[1]['extend']
                 motor_pwrs[1] = 250
-                # servos = [1915, 1644, 2480, 2208, 2471]
             elif(task_elapsed < 550):
                 motor_pos[0] = poslib[0]['retract']
                 motor_pwrs[0] = 250
                 motor_pos[1] = poslib[1]['retract']
                 motor_pwrs[1] = 250
                 servos = [1915, 1644, 2480, 2208, 3900]
-                # servos = [1012, 1216, 2815, 3008, 2471] #home retracted
             elif(task_elapsed < 750):
                 servos = [1012, 1216, 2815, 3008, 3900] #home retracted
                 for stick in joysticks.values():
-                    stick.rumble(0.7, 0.0, 100) #indicate calibration done
+                    stick.rumble(0.7, 0.0, 100)
             else:
                 task = 'idle'
 
         if(task == 'turnleft'):
-            speed = 1.3
+            speed = 1.2
             if(task_elapsed < 100/speed):
                 # servos = [2048-250, 2048-500, 2818, 3010, 2336] #right arm up 
                 servos = [1012, 1216, 2300, 2200, 3900] #left arm up, unexpand
                 # set_motor_pos(1, 0.9, 100)
             elif(task_elapsed < 300/speed):
-                servos = [1600, 900, 2300, 2200, 3072] #expand
+                servos = [1650, 850, 2300, 2200, 3072] #expand
                 # set_motor_pos(1, 0.9, 100)
             elif(task_elapsed < 400/speed):
-                servos = [1600, 900, 2818, 3010, 3072] #right arm down, left arm up, still expanded
+                servos = [1650, 850, 2818, 3010, 3072] #right arm down, left arm up, still expanded
                 # set_motor_pos(1, 0.9, 100)
             elif(task_elapsed < 500/speed):
                 servos = [1800, 1550, 2818, 3010, 3900] #right arm down, left arm up, unexpand
