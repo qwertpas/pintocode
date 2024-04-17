@@ -106,9 +106,9 @@ def main():
         poslib = [
             { #top motor A
                 # 'extend': 25,
-                'extend': -249,
+                'extend': -308,
                 # 'retract': 270, #actually -37 but might overshoot and overwrap
-                'retract': 13, #actually -37 but might overshoot and overwrap
+                'retract': -46, #actually -37 but might overshoot and overwrap
             },
             { #bottom motor B
                 'extend': 273,
@@ -159,7 +159,7 @@ def main():
             elif(joy_data['+']):
                 task = 'boogie'
             else: #voltage control
-                motor_pwrs[0] = joy_data['lefty']*150
+                motor_pwrs[0] = joy_data['lefty']*0
                 motor_pwrs[1] = joy_data['righty']*150
                 motor_pos[0] = math.copysign(999, joy_data['lefty'])
                 motor_pos[1] = math.copysign(999, joy_data['righty'])

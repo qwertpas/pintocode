@@ -98,6 +98,8 @@ uint8_t disable_motors_flag = 0;
 String receivedString = "";
 String recv_vars = "";
 
+uint32_t checksum = 0;
+
 // function declarations
 void reset_cmd(cmd_struct _cmd);
 uint8_t send_O32_cmd(uint8_t addr, uint8_t CMD_TYPE, uint16_t data, uint8_t *rx);
@@ -185,10 +187,21 @@ void loop() {
     // SET BLDC POWER
     int16_t cmd_A = cmd.motors[0];
     int16_t cmd_B = cmd.motors[1];
-    motA_nbytes = send_O32_cmd(0xA, CMD_SET_VOLTAGE, twoscomplement14(cmd_A), motA_rx);
+    // motA_nbytes = send_O32_cmd(0xA, CMD_SET_VOLTAGE, twoscomplement14(cmd_A), motA_rx);
+    // delay(1);
+    // uint8_t temp[10] = {0};
+    // rs485_0.readBytesUntil(MIN_INT8, temp, 10);
+    uint8_t zeros[2] = {0};
+    rs485_0.write(zeros, 2);
+    delayMicroseconds(200);
+    // rs485_0.flush();
+
     motB_nbytes = send_O32_cmd(0xB, CMD_SET_VOLTAGE, twoscomplement14(cmd_B), motB_rx);
+    motA_nbytes = send_O32_cmd(0xA, CMD_SET_VOLTAGE, twoscomplement14(cmd_A), motA_rx);
     state.pos_A = pad28(motA_rx[0], motA_rx[1], motA_rx[2], motA_rx[3]);
     state.pos_B = pad28(motB_rx[0], motB_rx[1], motB_rx[2], motB_rx[3]);
+
+    delay(10);
 
     dxl_write(dxl_ids[1], 116, cmd.servos[1]);
     dxl_write(dxl_ids[0], 116, cmd.servos[0]);
@@ -250,6 +263,10 @@ void loop() {
             "ntcB: %d\n"
             "vbus: %.2f\n"
 
+            "posA: %d\n"
+            "posB: %d\n"
+
+
             "rpmA: %d\n"
             "rpmB: %d\n"
 
@@ -284,6 +301,9 @@ void loop() {
             state.temp_ntcB,
             state.vbus,
 
+            state.pos_A,
+            state.pos_B,
+
             state.rpmA,
             state.rpmB,
 
@@ -304,7 +324,9 @@ void loop() {
 
         if (NO_SIGNAL)
             Serial.println("No signal to ESTOP ~~~~~~~~~~~~~~~~~~~~");
-        Serial.println(o32cnt);
+        // Serial.println(o32cnt);
+        Serial.print("checksum: ");
+        Serial.println(checksum);
         Serial.write(print_buf);
     }
 
@@ -321,9 +343,17 @@ void loop() {
             break;
         case 'm':
         {
+            char user_cmd = Serial.read();
             int receivedInt = Serial.parseInt(); // Read the incoming integer
-            cmd.motors[0] = clip(receivedInt, -511, 511);
-            cmd.motors[1] = clip(receivedInt, -511, 511);
+            if(!(user_cmd == 'a' || user_cmd == 'b') || !(user_cmd > -511 && user_cmd < 511)){
+                break;
+            }
+            if(user_cmd == 'a'){
+                cmd.motors[0] = clip(receivedInt, -511, 511);
+            }
+            else if(user_cmd == 'b'){
+                cmd.motors[1] = clip(receivedInt, -511, 511);
+            }
             break;
         }
         case 'z':
@@ -373,19 +403,22 @@ void reset_cmd(cmd_struct _cmd) {
 }
 
 uint8_t send_O32_cmd(uint8_t addr, uint8_t CMD_TYPE, uint16_t data, uint8_t *rx) {
-    while (rs485_0.available())
-        rs485_0.read(); // clear rx buffer
+    while (rs485_0.available()) rs485_0.read(); // clear rx buffer
 
-    uint8_t uart2_TX[3] = {0}; // command RS485 to Ø32
+    uint8_t uart2_TX[4] = {0}; // command RS485 to Ø32
     uart2_TX[0] = CMD_TYPE | addr;
     uart2_TX[1] = (data >> 7) & 0b01111111;
     uart2_TX[2] = (data) & 0b01111111;
+    uart2_TX[3] = ((uint8_t)(uart2_TX[0] + uart2_TX[1] + uart2_TX[2])) & 0b01111111; //checksum
 
-    rs485_0.write(uart2_TX, 3);
+    checksum = uart2_TX[3];
+
+    rs485_0.write(uart2_TX, 4);
     rs485_0.flush();
     delayMicroseconds(200); // should be enough for up to 20 bytes of response at 1Mbaud
-    // uint8_t numread = rs485_0.readBytesUntil(MIN_INT8, rx, 10); //don't use because data itself might contain MIN_INT8
-    uint8_t numread = rs485_0.readBytes(rx, 9);
+    uint8_t numread = rs485_0.readBytesUntil(MIN_INT8, rx, 10); //don't use because data itself might contain MIN_INT8
+    // uint8_t numread = rs485_0.readBytes(rx, 9);
+    // uint8_t numread = 0;
     return numread;
 }
 
