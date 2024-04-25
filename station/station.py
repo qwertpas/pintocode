@@ -108,7 +108,7 @@ def main():
                 # 'extend': 25,
                 'extend': -308,
                 # 'retract': 270, #actually -37 but might overshoot and overwrap
-                'retract': -46, #actually -37 but might overshoot and overwrap
+                'retract': 50, #actually -37 but might overshoot and overwrap
             },
             { #bottom motor B
                 'extend': 273,
@@ -249,15 +249,16 @@ def main():
                 task = 'idle'
 
         if(task == 'longjump'):
+            power = 350
             if(task_elapsed < 30):
                 servos = [1586, 503, 3523, 2381, 3900] #up
             elif(task_elapsed < 80):
                 servos = [2742, 2053, 1987, 990, 3072] #out
             elif(task_elapsed < 300):
                 motor_pos[0] = poslib[0]['extend']
-                motor_pwrs[0] = 250
+                motor_pwrs[0] = power
                 motor_pos[1] = poslib[1]['extend']
-                motor_pwrs[1] = 250
+                motor_pwrs[1] = power
             elif(task_elapsed < 550):
                 motor_pos[0] = poslib[0]['retract']
                 motor_pwrs[0] = 250

@@ -90,13 +90,21 @@ void setup() {
   digitalWrite(CS, LOW);
   A.setPGA(PGA_64); //224
   digitalWrite(CS, HIGH);
+  delay(10);
+  digitalWrite(CS, LOW);
+  A.setPGA(PGA_64); //224
+  digitalWrite(CS, HIGH);
   delay(100);
   digitalWrite(CS, LOW);
   A.setMUX(DIFF_0_1); 
   digitalWrite(CS, HIGH);
   delay(100);
   digitalWrite(CS, LOW);
-  A.setDRATE(DRATE_500SPS); //146
+  A.setDRATE(DRATE_1000SPS); //146
+  digitalWrite(CS, HIGH);
+  delay(10);
+  digitalWrite(CS, LOW);
+  A.setDRATE(DRATE_1000SPS); //146
   digitalWrite(CS, HIGH);
   delay(100);
   
@@ -124,33 +132,86 @@ void setup() {
 
   digitalWrite(LED_BUILTIN, HIGH);
 
+  A.setMUX(DIFF_2_3); 
+
 }
 
 
 elapsedMillis sample_timer;
+elapsedMillis elapsed;
 
 
 void loop() {
 
   if(Serial.available() > 0){
     if(Serial.read() == 'c'){
+      Serial.println("Initializing ADS1256");
+      digitalWrite(CS, LOW);
+      A.InitializeADC();
+      digitalWrite(CS, HIGH);
+      delay(10);
+      digitalWrite(CS, LOW);
+      A.setPGA(PGA_64); //224
+      digitalWrite(CS, HIGH);
+      delay(10);
+      digitalWrite(CS, LOW);
+      A.setPGA(PGA_64); //224
+      digitalWrite(CS, HIGH);
+      delay(10);
+      digitalWrite(CS, LOW);
+      A.setMUX(DIFF_0_1); 
+      digitalWrite(CS, HIGH);
+      delay(10);
+      digitalWrite(CS, LOW);
+      A.setDRATE(DRATE_1000SPS); //146
+      digitalWrite(CS, HIGH);
+      delay(10);
+      digitalWrite(CS, LOW);
+      A.setDRATE(DRATE_1000SPS); //146
+      digitalWrite(CS, HIGH);
+      delay(10);
       calibrate_force_angle();
       while(Serial.available()){Serial.read();}
     }
   }
 
-  if(sample_timer > 10){
-    float newtons = A.convertToVoltage(A.readSingle()) * N_per_V - N_zero;
-    Serial.print("force: ");
-    Serial.println(newtons,4);
+  if(sample_timer > 5){
+    
+    Serial.print("elapsed: ");
+    Serial.println(elapsed);
+
+    float newtons;
+
+//    A.setMUX(DIFF_0_1); 
+//    newtons = A.convertToVoltage(A.readSingle()) * N_per_V - N_zero;
+//    Serial.print("force01: ");
+//    Serial.println(newtons,4);
+
+//    newtons = A.convertToVoltage(A.readSingle()) * N_per_V - N_zero;
+//    Serial.print("force23: ");
+//    Serial.println(newtons,4);
   
-    motor_cmd(ENC_ADDR, CMD_GET_POSITION, 1, uart2_RX);
-    float angle = pad14(uart2_RX[0], uart2_RX[1]) * ang_per_ct - ang_zero;
-    Serial.print("angle: ");
-    Serial.print(angle,4);
-    Serial.print("\t\n");
+//    motor_cmd(ENC_ADDR, CMD_GET_POSITION, 1, uart2_RX);
+//    float angle = pad14(uart2_RX[0], uart2_RX[1]) * ang_per_ct - ang_zero;
+//    Serial.print("angle: ");
+//    Serial.print(angle,4);
+//    Serial.print("\t\n");
+
+    for (int j = 0; j < 4; j++){
+      Serial.print("force[");
+      Serial.print(j);
+      Serial.print("]: ");
+      Serial.println(A.convertToVoltage(A.cycleDifferential())* N_per_V - N_zero, 4);
+    }
+    Serial.println("\t\n");
 
     sample_timer = 0;
   }
+
+//  if(elapsed > 100){
+//      A.setDRATE(DRATE_500SPS); //146
+//      elapsed = 0;
+//  }
+ 
   
 }
