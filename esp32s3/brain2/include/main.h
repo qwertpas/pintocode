@@ -4,6 +4,7 @@
 #include <esp_now.h>
 #include <WiFi.h>
 #include <elapsedMillis.h>
+#include <math.h>
 
 #include "comdef.h"
 #include "util.h"

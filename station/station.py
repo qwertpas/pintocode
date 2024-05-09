@@ -105,14 +105,12 @@ def main():
 
         poslib = [
             { #top motor A
-                # 'extend': 25,
-                'extend': -308,
-                # 'retract': 270, #actually -37 but might overshoot and overwrap
-                'retract': 50, #actually -37 but might overshoot and overwrap
+                'extend': 00,
+                'retract': 200, #actually -37 but might overshoot and overwrap
             },
             { #bottom motor B
-                'extend': 273,
-                'retract': 160,
+                'extend': 260,
+                'retract': 155,
             }
         ]
 
@@ -148,9 +146,15 @@ def main():
             elif(joy_data['dpaddown']):
                 task = 'sit'
             elif(joy_data['dpadleft']):
-                task = 'turnleft'
+                if(joy_data['leftbumper']):
+                    task = 'diagleft'
+                else:
+                    task = 'turnleft'
             elif(joy_data['dpadright']):
-                task = 'turnright'
+                if(joy_data['leftbumper']):
+                    task = 'diagright'
+                else:
+                    task = 'turnright'
             elif(joy_data['dpadup']):
                 if(joy_data['leftbumper']):
                     task = 'longjump'
@@ -159,8 +163,8 @@ def main():
             elif(joy_data['+']):
                 task = 'boogie'
             else: #voltage control
-                motor_pwrs[0] = joy_data['lefty']*0
-                motor_pwrs[1] = joy_data['righty']*150
+                motor_pwrs[0] = joy_data['lefty']*200
+                motor_pwrs[1] = joy_data['righty']*200
                 motor_pos[0] = math.copysign(999, joy_data['lefty'])
                 motor_pos[1] = math.copysign(999, joy_data['righty'])
                 motor_pos[0] = clip(math.copysign(999, joy_data['lefty']), poslib[0]['extend'], poslib[0]['retract'])
@@ -225,24 +229,32 @@ def main():
         #         task = 'idle'
 
         if(task == 'bound'):
-            power = 150
-            if(task_elapsed < 50):
-                servos = [1586, 503, 3523, 2381, 3300] #up
-            elif(task_elapsed < 100):
+            # power = 200
+            if(task_elapsed < 100):
+                # servos = [1586, 503, 3523, 2381, 3300] #up
+                servos = [1012, 700, 3100, 2381, 3300] #lessup
+                set_motor_pos(0, 0.0, 100)
+                set_motor_pos(1, 0.0, 100)
+            elif(task_elapsed < 150):
                 servos = [2968, 2459, 1676, 969, 3072] #out
-            elif(task_elapsed < 350):
-                motor_pos[0] = poslib[0]['extend']
-                motor_pwrs[0] = power
-                motor_pos[1] = poslib[1]['extend']
-                motor_pwrs[1] = power
+                set_motor_pos(0, 1.0, 200)
+                set_motor_pos(1, 0.0, 100)
+            elif(task_elapsed < 370):
+                set_motor_pos(0, 1.0, 200)
+                set_motor_pos(1, 1.0, 150)
+            elif(task_elapsed < 500):
+                set_motor_pos(0, 0.0, 200)
+                set_motor_pos(1, 0.0, 150)
             elif(task_elapsed < 550):
-                motor_pos[0] = poslib[0]['retract']
-                motor_pwrs[0] = power
-                motor_pos[1] = poslib[1]['retract']
-                motor_pwrs[1] = power
-                servos = [1915, 1644, 2480, 2208, 3300]
-            elif(task_elapsed < 650):
-                servos = [1012, 1216, 2815, 3008, 3900] #home retracted
+                set_motor_pos(0, 0.0, 200)
+                set_motor_pos(1, 0.0, 200)
+                # servos = [1915, 1644, 2480, 2208, 3300]
+                servos = [1586, 503, 3523, 2381, 3300] #up
+
+            elif(task_elapsed < 750):
+                servos = [1012, 1216, 2815, 3008, 3600] #home retracted
+                set_motor_pos(0, 0.0, 200)
+                set_motor_pos(1, 0.0, 200)
                 for stick in joysticks.values():
                     stick.rumble(0.7, 0.0, 100)
             else:
@@ -261,9 +273,9 @@ def main():
                 motor_pwrs[1] = power
             elif(task_elapsed < 550):
                 motor_pos[0] = poslib[0]['retract']
-                motor_pwrs[0] = 250
+                motor_pwrs[0] = power
                 motor_pos[1] = poslib[1]['retract']
-                motor_pwrs[1] = 250
+                motor_pwrs[1] = power
                 servos = [1915, 1644, 2480, 2208, 3900]
             elif(task_elapsed < 750):
                 servos = [1012, 1216, 2815, 3008, 3900] #home retracted
@@ -275,28 +287,22 @@ def main():
         if(task == 'turnleft'):
             speed = 1.2
             if(task_elapsed < 100/speed):
-                # servos = [2048-250, 2048-500, 2818, 3010, 2336] #right arm up 
                 servos = [1012, 1216, 2300, 2200, 3900] #left arm up, unexpand
-                # set_motor_pos(1, 0.9, 100)
             elif(task_elapsed < 300/speed):
                 servos = [1650, 850, 2300, 2200, 3072] #expand
-                # set_motor_pos(1, 0.9, 100)
             elif(task_elapsed < 400/speed):
                 servos = [1650, 850, 2818, 3010, 3072] #right arm down, left arm up, still expanded
-                # set_motor_pos(1, 0.9, 100)
             elif(task_elapsed < 500/speed):
                 servos = [1800, 1550, 2818, 3010, 3900] #right arm down, left arm up, unexpand
-                # set_motor_pos(1, 0.9, 100)
             elif(task_elapsed < 600/speed):
                 servos = [1012, 1216, 2815, 3008, 3900] #home retracted
-                # set_motor_pos(1, 0.9, 100)
             else:
                 task = 'idle'
 
         if(task == 'turnright'):
             speed = 1.2
             if(task_elapsed < 100/speed):
-                servos = [1800, 1600, 2818, 3010, 3900] #right arm up 
+                servos = [2000, 1800, 3200, 2300, 3900] #right arm up 
             elif(task_elapsed < 300/speed):
                 servos = [1800, 1600, 3200, 2300, 3072] #expand
             elif(task_elapsed < 400/speed):
@@ -305,6 +311,57 @@ def main():
                 servos = [1012, 1216, 2300, 2200, 3900] #right arm down, left arm up, unexpand
             elif(task_elapsed < 600/speed):
                 servos = [1012, 1216, 2815, 3008, 3900] #home retracted
+            else:
+                task = 'idle'
+
+        if(task == 'diagright'):
+            speed = 1.2
+            if(task_elapsed < 100/speed):
+                # servos = [2048-250, 2048-500, 2818, 3010, 2336] #right arm up 
+                servos = [1012, 1216, 2300, 2200, 3900] #left arm up, unexpand
+                set_motor_pos(0, 0.3, 100)
+                set_motor_pos(1, 0.9, 100)
+            elif(task_elapsed < 300/speed):
+                servos = [1650, 850, 2300, 2200, 3072] #expand
+                set_motor_pos(0, 0.3, 100)
+                set_motor_pos(1, 0.9, 100)
+            elif(task_elapsed < 400/speed):
+                servos = [1650, 850, 2818, 3010, 3072] #right arm down, left arm up, still expanded
+                set_motor_pos(0, 0.3, 100)
+                set_motor_pos(1, 0.9, 100)
+            elif(task_elapsed < 500/speed):
+                servos = [1800, 1550, 2818, 3010, 3900] #right arm down, left arm up, unexpand
+                set_motor_pos(0, 0, 100)
+                set_motor_pos(1, 0.1, 100)
+            elif(task_elapsed < 600/speed):
+                servos = [1012, 1216, 2815, 3008, 3600] #home retracted
+                set_motor_pos(0, 0, 100)
+                set_motor_pos(1, 0.1, 100)
+            else:
+                task = 'idle'
+
+        if(task == 'diagleft'):
+            speed = 1.2
+            if(task_elapsed < 100/speed):
+                servos = [1800, 1600, 2818, 3010, 3600] #right arm up 
+                set_motor_pos(0, 0.3, 100)
+                set_motor_pos(1, 0.9, 100)
+            elif(task_elapsed < 300/speed):
+                servos = [1800, 1600, 3200, 2300, 3072] #expand
+                set_motor_pos(0, 0.3, 100)
+                set_motor_pos(1, 0.9, 100)
+            elif(task_elapsed < 400/speed):
+                servos = [1012, 1216, 2818, 3010, 3072] #right arm down, left arm up, still expanded
+                set_motor_pos(0, 0.3, 100)
+                set_motor_pos(1, 0.9, 100)
+            elif(task_elapsed < 500/speed):
+                servos = [1012, 1216, 2300, 2200, 3600] #right arm down, left arm up, unexpand
+                set_motor_pos(0, 0.0, 100)
+                set_motor_pos(1, 0.1, 100)
+            elif(task_elapsed < 600/speed):
+                servos = [1012, 1216, 2815, 3008, 3600] #home retracted
+                set_motor_pos(0, 0.0, 100)
+                set_motor_pos(1, 0.1, 100)
             else:
                 task = 'idle'
 
@@ -373,10 +430,13 @@ def main():
                 
 
         aux = 0
-        if(joy_data['circle'] and joy_data['home']):
-            aux |= (1 << 0) #set bit 0 for toggle motor power
         if(joy_data['circle']):
-            aux |= (1 << 1) #set bit 1 for enable servo torque
+            if(joy_data['-']): #circle and - to reset low voltage
+                low_battery = False
+            elif(joy_data['home']): #circle and home
+                aux |= (1 << 0) #set bit 0 for toggle motor power
+            else: #just circle
+                aux |= (1 << 1) #set bit 1 for enable servo torque
 
 
         

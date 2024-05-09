@@ -20,6 +20,18 @@
 #define GPIO34_UNUSED 34
 #define GPIO35_UNUSED 35
 
+#define LSM6DSV16X_ACC_SENSITIVITY_FS_2G   0.061f  //default
+#define LSM6DSV16X_ACC_SENSITIVITY_FS_4G   0.122f
+#define LSM6DSV16X_ACC_SENSITIVITY_FS_8G   0.244f
+#define LSM6DSV16X_ACC_SENSITIVITY_FS_16G  0.488f
+
+#define LSM6DSV16X_GYRO_SENSITIVITY_FS_125DPS     4.375f //default
+#define LSM6DSV16X_GYRO_SENSITIVITY_FS_250DPS     8.750f
+#define LSM6DSV16X_GYRO_SENSITIVITY_FS_500DPS    17.500f
+#define LSM6DSV16X_GYRO_SENSITIVITY_FS_1000DPS   35.000f
+#define LSM6DSV16X_GYRO_SENSITIVITY_FS_2000DPS   70.000f
+#define LSM6DSV16X_GYRO_SENSITIVITY_FS_4000DPS  140.000f
+
 uint8_t estop_mac_addr[] = {0x30, 0x30, 0xF9, 0x34, 0x52, 0xA0};
 uint8_t NO_SIGNAL = true;
 
@@ -38,7 +50,7 @@ uint8_t dxl_ids[] = {
 // communication buffers
 uint8_t dxl_tx[100];
 uint8_t dxl_rx[100];
-char print_buf[1024];
+char print_buf[200];
 
 hw_timer_t *timer_1khz = NULL;    // watchdog
 hw_timer_t *timer_elapsed = NULL; // keeping track of elapsed time
@@ -70,8 +82,12 @@ typedef struct state_struct {
     int32_t encpos2_offset;
     int32_t encpos2;
 
-    int16_t acc[3];
-    int16_t ang_rate[3];
+    float acc[3];
+    float ang_rate[3];
+    float ang_rate_prev[3]; //for trapezoidal integration
+    float ang_gyro[3];
+    float ang_acc[2];
+    float ang_filt[2];
     
     int16_t rpmA;
     uint8_t temp_ntcA;
@@ -243,6 +259,7 @@ int32_t calib_pos_B = 0;
 
 uint32_t elapsed;
 uint32_t elapsed_prev;
+unsigned long imu_time_prev = 0;
 
 uint32_t o32cnt = 0;
 
@@ -290,12 +307,24 @@ void loop() {
     uint8_t imu_rx[12] = {0};
     uint8_t imu_nbytes = send_rs485_cmd(&rs485_0, 0x6, CMD_GET_POSITION, 0x0, imu_rx, 12, 0);
     if(imu_nbytes == 12){
-        state.acc[0] = pad14(imu_rx[0], imu_rx[1]);
-        state.acc[1] = pad14(imu_rx[2], imu_rx[3]);
-        state.acc[2] = pad14(imu_rx[4], imu_rx[5]);
-        state.ang_rate[0] = pad14(imu_rx[6], imu_rx[7]);
-        state.ang_rate[1] = pad14(imu_rx[8], imu_rx[9]);
-        state.ang_rate[2] = pad14(imu_rx[10], imu_rx[11]);
+
+        for(int i = 0; i < 3; i++){
+            state.ang_rate_prev[i] = state.ang_rate[i];
+        }
+
+        state.acc[0] = pad14(imu_rx[0], imu_rx[1]) * LSM6DSV16X_ACC_SENSITIVITY_FS_2G; //X
+        state.acc[1] = pad14(imu_rx[2], imu_rx[3]) * LSM6DSV16X_ACC_SENSITIVITY_FS_2G; //Y
+        state.acc[2] = pad14(imu_rx[4], imu_rx[5]) * LSM6DSV16X_ACC_SENSITIVITY_FS_2G; //Z
+        state.ang_rate[0] = pad14(imu_rx[6], imu_rx[7]) * LSM6DSV16X_GYRO_SENSITIVITY_FS_125DPS;
+        state.ang_rate[1] = pad14(imu_rx[8], imu_rx[9]) * LSM6DSV16X_GYRO_SENSITIVITY_FS_125DPS;
+        state.ang_rate[2] = pad14(imu_rx[10], imu_rx[11]) * LSM6DSV16X_GYRO_SENSITIVITY_FS_125DPS;
+
+        unsigned long dt = micros() - imu_time_prev;
+        for(int i = 0; i < 3; i++){
+            state.ang_gyro[i] = state.ang_rate[i] * dt;
+        }
+        state.ang_acc[0]  = atan2(state.acc[1], state.acc[2]) * RAD_TO_DEG;
+        state.ang_acc[1] = atan(-state.acc[0] / sqrt(state.acc[1] * state.acc[1] + state.acc[2] * state.acc[2])) * RAD_TO_DEG;
     }
     // Serial.println(imu_nbytes);
     // Serial.println(imu_rx[0]);
@@ -322,6 +351,21 @@ void loop() {
     }
     if((cmd.aux & 0b00010) && !(cmd.aux_prev & 0b00010)){ //if rising edge of aux bit 1, turn on servos
         set_dxl_torque_on();
+
+
+        if(state.encpos1_raw < 0){
+            state.encpos1_offset = (state.encpos1_raw/32768 - 1) * 32768; // -48000 - (-1 - 1)*32768
+        }else{
+            state.encpos1_offset = state.encpos1_raw/32768 * 32768; 
+        }
+
+        if(state.encpos2_raw < 0){
+            state.encpos2_offset = (state.encpos2_raw/32768 - 1) * 32768; // -48000 - (-1 - 1)*32768
+        }else{
+            state.encpos2_offset = state.encpos2_raw/32768 * 32768; 
+        }
+        // state.encpos1_offset = copysign(state.encpos1_raw, state.encpos1_raw/32768 * 32768);
+        // state.encpos2_offset = copysign(state.encpos2_raw, state.encpos2_raw/32768 * 32768);
     }
 
     //BLDC POS CALIBRATION
@@ -522,6 +566,9 @@ void loop() {
     if (print_timer > 10 && Serial.availableForWrite()) {
         print_timer = 0;
 
+        memset(print_buf,0,strlen(print_buf));
+
+
         sprintf(
             print_buf,
 
@@ -551,21 +598,26 @@ void loop() {
             "encpos1: %ld\n"
             "encpos2: %ld\n"
 
-            "sentA: %d\n"
-            "sentB: %d\n"
+            // "sentA: %d\n"
+            // "sentB: %d\n"
 
-            // "acc0: %d\n"
-            // "acc1: %d\n"
-            // "acc2: %d\n"
-            "rate0: %d\n"
-            // "rate1: %d\n"
-            // "rate2: %d\n"
+            "acc0: %.2f\n"
+            "acc1: %.2f\n"
+            "acc2: %.2f\n"
+            "rate0: %.2f\n"
+            "rate1: %.2f\n"
+            "rate2: %.2f\n"
+            // "ang_gyro[0] : %f\n"
+            // "ang_gyro[1] : %f\n"
+            // "ang_gyro[2] : %f\n"
+            // "ang_acc[0]: %f\n"
+            // "ang_acc[1]: %f\n"
 
-            "dxl_pos[0]: %ld\n"
-            "dxl_pos[1]: %ld\n"
-            "dxl_pos[2]: %ld\n"
-            "dxl_pos[3]: %ld\n"
-            "dxl_pos[4]: %ld\n"
+            // "dxl_pos[0]: %ld\n"
+            // "dxl_pos[1]: %ld\n"
+            // "dxl_pos[2]: %ld\n"
+            // "dxl_pos[3]: %ld\n"
+            // "dxl_pos[4]: %ld\n"
             // "dxl_torque_on: %ld\t\n",
             "\t\n",
 
@@ -590,21 +642,26 @@ void loop() {
             state.encpos1,
             state.encpos2,
 
-            state.sent_cmd_A,
-            state.sent_cmd_B,
+            // state.sent_cmd_A,
+            // state.sent_cmd_B,
 
-            // state.acc[0],
-            // state.acc[1],
-            // state.acc[2],
+            state.acc[0],
+            state.acc[1],
+            state.acc[2],
             state.ang_rate[0],
-            // state.ang_rate[1],
-            // state.ang_rate[2],
+            state.ang_rate[1],
+            state.ang_rate[2]
+            // state.ang_gyro[0],
+            // state.ang_gyro[1],
+            // state.ang_gyro[2],
+            // state.ang_acc[0],
+            // state.ang_acc[1],
 
-            state.dxl_pos[0],
-            state.dxl_pos[1],
-            state.dxl_pos[2],
-            state.dxl_pos[3],
-            state.dxl_pos[4]
+            // state.dxl_pos[0],
+            // state.dxl_pos[1],
+            // state.dxl_pos[2],
+            // state.dxl_pos[3],
+            // state.dxl_pos[4]
             // state.dxl_torque_on
         );
 
