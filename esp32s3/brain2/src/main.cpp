@@ -65,46 +65,49 @@ typedef struct cmd_struct {
 cmd_struct cmd;
 
 typedef struct state_struct {
-    uint8_t motor_power_on;
-    uint8_t dxl_torque_on;
-    uint16_t dxl_pos[5];
+    uint8_t motor_power_on; //B
+    uint8_t dxl_torque_on; //B
+    uint16_t dxl_pos[5]; //5H
 
-    int32_t pos_A;
-    int32_t pos_B;
+    int32_t pos_A; //i
+    int32_t pos_B; //i
 
-    int16_t sent_cmd_A;
-    int16_t sent_cmd_B;
+    int16_t sent_cmd_A; //h
+    int16_t sent_cmd_B; //h
 
-    int32_t encpos1_raw;
-    int32_t encpos1_offset;
-    int32_t encpos1;
-    int32_t encpos2_raw;
-    int32_t encpos2_offset;
-    int32_t encpos2;
+    int32_t encpos1_raw; //i
+    int32_t encpos1_offset; //i
+    int32_t encpos1; //i
+    int32_t encpos2_raw; //i
+    int32_t encpos2_offset; //i
+    int32_t encpos2; //i
 
-    float acc[3];
-    float ang_rate[3];
-    float ang_rate_prev[3]; //for trapezoidal integration
-    float ang_gyro[3];
-    float ang_acc[2];
-    float ang_filt[2];
+    float acc[3];      //3f
+    float ang_rate[3]; //3f
+    float ang_rate_prev[3]; //for trapezoidal integration //3f
+    float ang_gyro[3]; //3f
+    float ang_acc[2];//2f
+    float ang_filt[2];//2f
     
-    int16_t rpmA;
-    uint8_t temp_ntcA;
-    float vbusA;
+    int16_t rpmA; //h
+    uint8_t temp_ntcA; //B
+    float vbusA; //f
 
-    int16_t rpmB;
-    uint8_t temp_ntcB;
-    float vbusB;
+    int16_t rpmB; //h
+    uint8_t temp_ntcB; //B
+    float vbusB; //f
 
-    float vbus;
+    float vbus; //f
 
-    uint32_t elapsed;
-    float cur_tot;
+    uint32_t elapsed; //I
+    float cur_tot; //f
 
-    uint8_t no_signal_cnt;
+    uint8_t no_signal_cnt; //B
 } state_struct;
 state_struct state = {0};
+
+// state_struct log[10] = {0};
+
 
 char state_str[1024];
 
@@ -180,7 +183,7 @@ void setup() {
 
     pinMode(GPIO_D1, INPUT);
 
-    Serial.begin(115200); //USB print
+    Serial.begin(1000000); //USB print
     Serial.setTimeout(0);
     Serial.setTxTimeoutMs(0);
 
@@ -525,39 +528,63 @@ void loop() {
 
 
     //TELEMETRY
-    if(telemetry_timer > 10){
+    if(telemetry_timer > 1){
         telemetry_timer = 0;
         size_t state_str_size = sprintf(state_str,
-            "motor_power_on:%d\n"
+            // "motor_power_on:%d\n"
             // "dxl_torque_on:%d\n"
-            "dxl_pos[0]:%d\n"
-            "dxl_pos[1]:%d\n"
-            "dxl_pos[2]:%d\n"
-            "dxl_pos[3]:%d\n"
-            "dxl_pos[4]:%d\n"
-            "ntcA:%d\n"
-            "ntcB:%d\n"
-            "vbus:%.2f\n"
-            "encpos1:%d\n"
-            "encpos2:%d\n"
-            "elapsed:%d\n"
-            "cur_tot:%.2f\n"
+            // "dxl_pos[0]:%d\n"
+            // "dxl_pos[1]:%d\n"
+            // "dxl_pos[2]:%d\n"
+            // "dxl_pos[3]:%d\n"
+            // "dxl_pos[4]:%d\n"
+            // "ntcA:%d\n"
+            "p1:%d\n"
+            "p2:%d\n"
+            "m1:%d\n"
+            "m2:%d\n"
+            // "ntcB:%d\n"
+            "v:%.2f\n"
+            "e1:%d\n"
+            "e2:%d\n"
+            "t:%d\n"
+            "I:%.2f\n"
             ,
-            state.motor_power_on,
+            // state.motor_power_on,
             // state.dxl_torque_on,
-            state.dxl_pos[0],
-            state.dxl_pos[1],
-            state.dxl_pos[2],
-            state.dxl_pos[3],
-            state.dxl_pos[4],
-            state.temp_ntcA,
-            state.temp_ntcB,
+            // state.dxl_pos[0],
+            // state.dxl_pos[1],
+            // state.dxl_pos[2],
+            // state.dxl_pos[3],
+            // state.dxl_pos[4],
+            // state.temp_ntcA,
+            // state.temp_ntcB,
+            state.sent_cmd_A,
+            state.sent_cmd_B,
+            state.pos_A,
+            state.pos_B,
             state.vbus,
             state.encpos1,
             state.encpos2,
             state.elapsed,
             state.cur_tot
         );
+
+
+
+        // char logbuf[200] = {0};
+        // memcpy(logbuf, &state, sizeof(state));    
+
+        // Serial.printf("%d\n", elapsed);
+
+        // for(int i = 0; i < sizeof(state); ++i){
+        //     Serial.printf("%02X ", (unsigned char)logbuf[i]);
+        // }
+        // Serial.println('\t');
+
+
+
+        // esp_now_send(estop_mac_addr, (uint8_t *) logbuf, sizeof(state));
         esp_now_send(estop_mac_addr, (uint8_t *) state_str, state_str_size);
     }
 
@@ -566,108 +593,122 @@ void loop() {
     if (print_timer > 10 && Serial.availableForWrite()) {
         print_timer = 0;
 
-        memset(print_buf,0,strlen(print_buf));
+        Serial.printf("%d\n", sizeof(state));
+
+        // memset(print_buf,0,strlen(print_buf));
 
 
-        sprintf(
-            print_buf,
+        // sprintf(
+        //     print_buf,
 
-            // "elapsed: %ld\n"
-            // "looptime: %d\n"
-            // "cur_tot: %.2f\n"
-            // "calib_pos_A: %ld\n"
-            // "calib_pos_B: %ld\n"
+        //     // "elapsed: %ld\n"
+        //     "looptime: %d\n"
+        //     // "cur_tot: %.2f\n"
+        //     // "calib_pos_A: %ld\n"
+        //     // "calib_pos_B: %ld\n"
 
-            // "s[0]: %ld\n"
-            // "s[1]: %ld\n"
-            // "s[2]: %ld\n"
-            // "s[3]: %ld\n"
-            // "s[4]: %ld\n"
-            "mw[0]: %ld\n"
-            "mw[1]: %ld\n"
-            "mo[0]: %ld\n"
-            "mo[1]: %ld\n"
-            // "aux: %d\n"
+        //     // "s[0]: %ld\n"
+        //     // "s[1]: %ld\n"
+        //     // "s[2]: %ld\n"
+        //     // "s[3]: %ld\n"
+        //     // "s[4]: %ld\n"
+        //     "mw[0]: %ld\n"
+        //     "mw[1]: %ld\n"
+        //     "mo[0]: %ld\n"
+        //     "mo[1]: %ld\n"
+        //     // "aux: %d\n"
 
-            // "nosigcnt: %d\n"
+        //     // "nosigcnt: %d\n"
 
-            "ntcA: %d\n"
-            "ntcB: %d\n"
-            "vbus: %.2f\n"
+        //     "ntcA: %d\n"
+        //     "ntcB: %d\n"
+        //     "vbus: %.2f\n"
 
-            "encpos1: %ld\n"
-            "encpos2: %ld\n"
+        //     "encpos1: %ld\n"
+        //     "encpos2: %ld\n"
 
-            // "sentA: %d\n"
-            // "sentB: %d\n"
+        //     // "sentA: %d\n"
+        //     // "sentB: %d\n"
 
-            "acc0: %.2f\n"
-            "acc1: %.2f\n"
-            "acc2: %.2f\n"
-            "rate0: %.2f\n"
-            "rate1: %.2f\n"
-            "rate2: %.2f\n"
-            // "ang_gyro[0] : %f\n"
-            // "ang_gyro[1] : %f\n"
-            // "ang_gyro[2] : %f\n"
-            // "ang_acc[0]: %f\n"
-            // "ang_acc[1]: %f\n"
+        //     "acc0: %.2f\n"
+        //     "acc1: %.2f\n"
+        //     "acc2: %.2f\n"
+        //     "rate0: %.2f\n"
+        //     "rate1: %.2f\n"
+        //     "rate2: %.2f\n"
+        //     // "ang_gyro[0] : %f\n"
+        //     // "ang_gyro[1] : %f\n"
+        //     // "ang_gyro[2] : %f\n"
+        //     // "ang_acc[0]: %f\n"
+        //     // "ang_acc[1]: %f\n"
 
-            // "dxl_pos[0]: %ld\n"
-            // "dxl_pos[1]: %ld\n"
-            // "dxl_pos[2]: %ld\n"
-            // "dxl_pos[3]: %ld\n"
-            // "dxl_pos[4]: %ld\n"
-            // "dxl_torque_on: %ld\t\n",
-            "\t\n",
+        //     // "dxl_pos[0]: %ld\n"
+        //     // "dxl_pos[1]: %ld\n"
+        //     // "dxl_pos[2]: %ld\n"
+        //     // "dxl_pos[3]: %ld\n"
+        //     // "dxl_pos[4]: %ld\n"
+        //     // "dxl_torque_on: %ld\t\n",
+        //     "\t\n",
 
+        //     looptime,
 
-            // cmd.servos[0],
-            // cmd.servos[1],
-            // cmd.servos[2],
-            // cmd.servos[3],
-            // cmd.servos[4],
-            cmd.motor_pwrs[0],
-            cmd.motor_pwrs[1],
-            cmd.motor_pos[0],
-            cmd.motor_pos[1],
-            // cmd.aux,
+        //     // cmd.servos[0],
+        //     // cmd.servos[1],
+        //     // cmd.servos[2],
+        //     // cmd.servos[3],
+        //     // cmd.servos[4],
+        //     cmd.motor_pwrs[0],
+        //     cmd.motor_pwrs[1],
+        //     cmd.motor_pos[0],
+        //     cmd.motor_pos[1],
+        //     // cmd.aux,
 
-            // state.no_signal_cnt,
+        //     // state.no_signal_cnt,
 
-            state.temp_ntcA,
-            state.temp_ntcB,
-            state.vbus,
+        //     state.temp_ntcA,
+        //     state.temp_ntcB,
+        //     state.vbus,
 
-            state.encpos1,
-            state.encpos2,
+        //     state.encpos1,
+        //     state.encpos2,
 
-            // state.sent_cmd_A,
-            // state.sent_cmd_B,
+        //     // state.sent_cmd_A,
+        //     // state.sent_cmd_B,
 
-            state.acc[0],
-            state.acc[1],
-            state.acc[2],
-            state.ang_rate[0],
-            state.ang_rate[1],
-            state.ang_rate[2]
-            // state.ang_gyro[0],
-            // state.ang_gyro[1],
-            // state.ang_gyro[2],
-            // state.ang_acc[0],
-            // state.ang_acc[1],
+        //     state.acc[0],
+        //     state.acc[1],
+        //     state.acc[2],
+        //     state.ang_rate[0],
+        //     state.ang_rate[1],
+        //     state.ang_rate[2]
+        //     // state.ang_gyro[0],
+        //     // state.ang_gyro[1],
+        //     // state.ang_gyro[2],
+        //     // state.ang_acc[0],
+        //     // state.ang_acc[1],
 
-            // state.dxl_pos[0],
-            // state.dxl_pos[1],
-            // state.dxl_pos[2],
-            // state.dxl_pos[3],
-            // state.dxl_pos[4]
-            // state.dxl_torque_on
-        );
+        //     // state.dxl_pos[0],
+        //     // state.dxl_pos[1],
+        //     // state.dxl_pos[2],
+        //     // state.dxl_pos[3],
+        //     // state.dxl_pos[4]
+        //     // state.dxl_torque_on
+        // );
 
-        if(NO_SIGNAL) Serial.println("No signal to ESTOP ~~~~~~~~~~~~~~~~~~~~");
+        // char logbuf[200] = {0};
+        // memcpy(logbuf, &state, sizeof(state));        
+        
+        // if(NO_SIGNAL) Serial.println("No signal to ESTOP ~~~~~~~~~~~~~~~~~~~~");
         // Serial.println(o32cnt);
-        Serial.write(print_buf);
+        // Serial.write(print_buf);
+
+        // Serial.printf("%d\n", elapsed);
+
+        // for(int i = 0; i < sizeof(state); ++i){
+        //     Serial.printf("%02X ", (unsigned char)logbuf[i]);
+        // }
+        // Serial.println('\t');
+        // Serial.printf()
     }
 
 

@@ -125,7 +125,7 @@ void loop() {
     adc.setChannel(2, 3);
     adc_mV[3] = 1000*adc.readCurrentChannel(); //data from 67
 
-    float alpha_N = 0.01;
+    float alpha_N = 0.1;
     for(int i=0; i<4; i++){
         adc_N[i] = alpha_N*N_per_mV[i]*(adc_mV[i] - mV_zero[i]) + (1-alpha_N)*adc_N[i];
     }

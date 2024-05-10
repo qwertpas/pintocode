@@ -8,6 +8,11 @@ from timeit import default_timer as timer
 from periodics import PeriodicSleeper
 import numpy as np
 
+
+LOGGING_ON = True
+
+
+
 os.environ['SDL_JOYSTICK_ALLOW_BACKGROUND_EVENTS'] = '1'
 pygame.init()
 screen = pygame.display.set_mode((50, 50))
@@ -15,6 +20,59 @@ screen = pygame.display.set_mode((50, 50))
 port = "/dev/cu.usbmodem1101"
 ser = None
 # ports = serial.tools.list_ports.comports()
+
+
+import struct
+import datetime
+
+def decode_state_struct(hex_data):
+    # Define the format string for unpacking the struct
+    # Refer to the Python 'struct' module documentation for format characters
+    # '<' - little endian, 'B' - uint8_t, 'H' - uint16_t, 'i' - int32_t, 'f' - float
+    # fmt = 'BB5H2i2h6i16fhBfhBffIfB'
+    fmt = 'BB5H2i2h6i16f'
+
+    hex_data = bytes.fromhex(hex_data)
+    for i in range(len(hex_data)):
+        print(i, hex_data[i])
+    
+    # Unpack the binary data into a tuple
+    unpacked = struct.unpack_from(fmt, hex_data)
+    
+    # Map unpacked data to named fields (for clarity)
+    state = {
+        'motor_power_on': unpacked[0],
+        'dxl_torque_on': unpacked[1],
+        'dxl_pos': unpacked[2:7],
+        'pos_A': unpacked[7],
+        'pos_B': unpacked[8],
+        'sent_cmd_A': unpacked[9],
+        'sent_cmd_B': unpacked[10],
+        'encpos1_raw': unpacked[11],
+        'encpos1_offset': unpacked[12],
+        'encpos1': unpacked[13],
+        'encpos2_raw': unpacked[14],
+        'encpos2_offset': unpacked[15],
+        'encpos2': unpacked[16],
+        'acc': unpacked[17:20],
+        'ang_rate': unpacked[20:23],
+        'ang_rate_prev': unpacked[23:26],
+        'ang_gyro': unpacked[26:29],
+        'ang_acc': unpacked[29:31],
+        'ang_filt': unpacked[31:33],
+        'rpmA': unpacked[33],
+        'temp_ntcA': unpacked[34],
+        'vbusA': unpacked[35],
+        'rpmB': unpacked[36],
+        'temp_ntcB': unpacked[37],
+        'vbusB': unpacked[38],
+        'vbus': unpacked[39],
+        'elapsed': unpacked[40],
+        'cur_tot': unpacked[41],
+        'no_signal_cnt': unpacked[42]
+    }
+    
+    return state
 
 joysticks = {}
 joy_data = {
@@ -58,7 +116,7 @@ axes_calibrated = False
 message = ''
 messagebuffer = ''
 telemetry = {
-    'vbus': 0
+    'v': 0
 } #data back
 
 servos = [2048] * 5
@@ -85,7 +143,12 @@ def main():
     motor_pwrs = [0,0]
 
     send_handler = PeriodicSleeper(send_to_estop, 0.01)
-    
+
+
+    if(LOGGING_ON):
+        current_time = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        global file
+        file = open(f"./data/{current_time}.txt", "a")
 
     start_time = timer()
     while not done:
@@ -105,8 +168,8 @@ def main():
 
         poslib = [
             { #top motor A
-                'extend': 00,
-                'retract': 200, #actually -37 but might overshoot and overwrap
+                'extend': 0,
+                'retract': 300, #actually -37 but might overshoot and overwrap
             },
             { #bottom motor B
                 'extend': 260,
@@ -163,8 +226,8 @@ def main():
             elif(joy_data['+']):
                 task = 'boogie'
             else: #voltage control
-                motor_pwrs[0] = joy_data['lefty']*200
-                motor_pwrs[1] = joy_data['righty']*200
+                motor_pwrs[0] = joy_data['lefty']*300
+                motor_pwrs[1] = joy_data['righty']*300
                 motor_pos[0] = math.copysign(999, joy_data['lefty'])
                 motor_pos[1] = math.copysign(999, joy_data['righty'])
                 motor_pos[0] = clip(math.copysign(999, joy_data['lefty']), poslib[0]['extend'], poslib[0]['retract'])
@@ -230,35 +293,59 @@ def main():
 
         if(task == 'bound'):
             # power = 200
-            if(task_elapsed < 100):
-                # servos = [1586, 503, 3523, 2381, 3300] #up
-                servos = [1012, 700, 3100, 2381, 3300] #lessup
-                set_motor_pos(0, 0.0, 100)
-                set_motor_pos(1, 0.0, 100)
-            elif(task_elapsed < 150):
+            if(task_elapsed < 150):
+                # servos = [1012, 700, 3100, 2381, 3300] #not much up
+                # servos = [1553, 970, 3172, 2487, 3300] #more up
+                servos = [1553, 770, 3372, 2487, 3800] #more more up
+                set_motor_pos(0, 1.0, 100)
+                set_motor_pos(1, 0.1, 100)
+            elif(task_elapsed < 200):
                 servos = [2968, 2459, 1676, 969, 3072] #out
-                set_motor_pos(0, 1.0, 200)
-                set_motor_pos(1, 0.0, 100)
-            elif(task_elapsed < 370):
-                set_motor_pos(0, 1.0, 200)
+                set_motor_pos(0, 1.0, 250)
                 set_motor_pos(1, 1.0, 150)
-            elif(task_elapsed < 500):
-                set_motor_pos(0, 0.0, 200)
+            elif(task_elapsed < 260):
+                set_motor_pos(0, 1.0, 250)
+                set_motor_pos(1, 1.0, 150)
+            elif(task_elapsed < 300):
+                set_motor_pos(0, 1.0, 150)
                 set_motor_pos(1, 0.0, 150)
-            elif(task_elapsed < 550):
+                servos = [1586, 503, 3523, 2381, 3000] #up
+            elif(task_elapsed < 500):
                 set_motor_pos(0, 0.0, 200)
                 set_motor_pos(1, 0.0, 200)
                 # servos = [1915, 1644, 2480, 2208, 3300]
-                servos = [1586, 503, 3523, 2381, 3300] #up
-
-            elif(task_elapsed < 750):
-                servos = [1012, 1216, 2815, 3008, 3600] #home retracted
+                # servos = [1586, 503, 3523, 2381, 3300] #up
+                servos = [2047, 1802, 2307, 1820, 3000] #wide for landing
+            elif(task_elapsed < 600):
+                # servos = [1700, 1500, 2540, 2353, 3600] #home 
+                servos = [2047, 1802, 2307, 1820, 3600] #ready for next bound
                 set_motor_pos(0, 0.0, 200)
                 set_motor_pos(1, 0.0, 200)
                 for stick in joysticks.values():
                     stick.rumble(0.7, 0.0, 100)
             else:
                 task = 'idle'
+
+
+            # elif(task_elapsed < 580):
+            #     # servos = [1700, 1500, 2540, 2353, 3600] #home 
+            #     servos = [1250, 613, 3566, 2801, 3600] #pullback
+            #     set_motor_pos(0, 0.0, 200)
+            #     set_motor_pos(1, 0.0, 200)
+            # elif(task_elapsed < 670):
+            #     # servos = [1700, 1500, 2540, 2353, 3600] #home 
+            #     servos = [1042, 1254, 2923, 3182, 3300] #pullback
+            #     set_motor_pos(0, 0.0, 200)
+            #     set_motor_pos(1, 0.0, 200)
+            # elif(task_elapsed < 750):
+            #     # servos = [1700, 1500, 2540, 2353, 3600] #home 
+            #     servos = [2047, 1802, 2307, 1820, 3600] #ready for next bound
+            #     set_motor_pos(0, 0.0, 200)
+            #     set_motor_pos(1, 0.0, 200)
+            #     for stick in joysticks.values():
+            #         stick.rumble(0.7, 0.0, 100)
+            # else:
+            #     task = 'idle'
 
         if(task == 'longjump'):
             power = 350
@@ -420,7 +507,7 @@ def main():
         
 
         low_battery_threshold = 10.5
-        if((elapsed > 1000 and telemetry['motor_power_on']==1 and telemetry['vbus'] > 0 and telemetry['vbus'] < low_battery_threshold) or low_battery):
+        if((task=='idle' and elapsed > 1000 and telemetry['v'] > 0 and telemetry['v'] < low_battery_threshold) or low_battery):
             print("LOW BATTERY")
             low_battery = True
             for i in range(5):
@@ -504,12 +591,18 @@ def recv_from_estop():
     global messagebuffer, telemetry
     global message
     global axes_calibrated
+    global file
 
     messagecount = 0
 
     try:
         if ser.in_waiting > 0:
-            uarttext = ser.read_all().decode('utf-8', errors='ignore')
+            # hexes = ser.read_all().hex()
+            # print_message(hexes)
+            # print(len(hexes))
+            # teledict = decode_state_struct(hexes)
+            # print_message(teledict)
+            uarttext = ser.read_all().decode('utf-8', errors='ignore')            
             
             ending=0
             while(uarttext):
@@ -538,6 +631,12 @@ def recv_from_estop():
                 uarttext = uarttext[ending+len(delimiter):] #front of buffer used up
 
             message = uarttext #whatver is left over
+
+        if(LOGGING_ON):
+            for key, value in telemetry.items():
+                file.write(f"{key}: {value}\n")
+            file.write("#\n")
+        
     except Exception as e:
         print(e)
         return
