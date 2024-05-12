@@ -295,7 +295,8 @@ void loop() {
     //READ RS485 ENCODERS
     uint8_t enc_rx[4] = {0};
     uint8_t enc_nbytes = send_rs485_cmd(&rs485_0, 0x1, CMD_GET_POSITION, 0x0, enc_rx, 4, 82); //rs485_1 doesnt recv anything for some reason
-    float enc_alpha = 0.4; //low pass filter, lower this number the smoother
+    // float enc_alpha = 0.4; //low pass filter, lower this number the smoother
+    float enc_alpha = 0.8; //low pass filter, lower this number the smoother
     if(enc_nbytes == 4){
         state.encpos1_raw = enc_alpha * pad28(enc_rx[0], enc_rx[1], enc_rx[2], enc_rx[3]) + (1-enc_alpha)*state.encpos1_raw;
         state.encpos1 = state.encpos1_raw - state.encpos1_offset;

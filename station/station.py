@@ -9,7 +9,7 @@ from periodics import PeriodicSleeper
 import numpy as np
 
 
-LOGGING_ON = True
+LOGGING_ON = False
 
 
 
@@ -168,12 +168,14 @@ def main():
 
         poslib = [
             { #top motor A
-                'extend': 0,
-                'retract': 300, #actually -37 but might overshoot and overwrap
+                'extend': -200,
+                'retract': 13,
+                'latch': 42
             },
             { #bottom motor B
-                'extend': 260,
-                'retract': 155,
+                'extend': 182,
+                'retract': 106,
+                'latch': 76
             }
         ]
 
@@ -219,19 +221,25 @@ def main():
                 else:
                     task = 'turnright'
             elif(joy_data['dpadup']):
-                if(joy_data['leftbumper']):
-                    task = 'longjump'
-                else:
-                    task = 'bound'
+                # if(joy_data['leftbumper']):
+                #     task = 'longjump'
+                # else:
+                #     task = 'bound'
+                task = 'bound'
             elif(joy_data['+']):
                 task = 'boogie'
+            elif(joy_data['rightbumper']):
+                task = 'cycle'
             else: #voltage control
-                motor_pwrs[0] = joy_data['lefty']*300
-                motor_pwrs[1] = joy_data['righty']*300
+                motor_pwrs[0] = joy_data['lefty']*200
+                motor_pwrs[1] = joy_data['righty']*200
                 motor_pos[0] = math.copysign(999, joy_data['lefty'])
                 motor_pos[1] = math.copysign(999, joy_data['righty'])
-                motor_pos[0] = clip(math.copysign(999, joy_data['lefty']), poslib[0]['extend'], poslib[0]['retract'])
-                motor_pos[1] = clip(math.copysign(999, -joy_data['righty']), poslib[1]['extend'], poslib[1]['retract'])
+
+                endstop0 = (poslib[0]['retract'] if joy_data['lefttrigger']<0.5 else poslib[0]['latch'])
+                endstop1 = (poslib[1]['retract'] if joy_data['lefttrigger']<0.5 else poslib[1]['latch'])
+                motor_pos[0] = clip(math.copysign(999, joy_data['lefty']), poslib[0]['extend'], endstop0)
+                motor_pos[1] = clip(math.copysign(999, -joy_data['righty']), poslib[1]['extend'], endstop1)
                 # motor_pos[1] = math.copysign(999, joy_data['righty'])
 
 
@@ -259,6 +267,27 @@ def main():
                 servos[4] = 3072
                 # motor_pos[1] = poslib[1]['retract']
                 # motor_pwrs[1] = 150
+            else:
+                task = 'idle'
+
+        if(task == 'cycle'):
+            period = 400
+            power = 200
+            t = (task_elapsed%period)/period 
+            if(task_elapsed < period*1):
+                
+
+                set_motor_pos(0, (1-t)*0.5 + 0.99*t, power)
+                set_motor_pos(1, 1, power)
+            elif(task_elapsed < period*2):
+                set_motor_pos(0, 0.99, power)
+                set_motor_pos(1, (1-t)*1 + 0*t, power)
+            elif(task_elapsed < period*3):
+                set_motor_pos(0, (1-t)*0.99 + 0.5*t, power)
+                set_motor_pos(1, 0, power)
+            elif(task_elapsed < period*4):
+                set_motor_pos(0, 0.5, power)
+                set_motor_pos(1, (1-t)*0 + 1*t, power)
             else:
                 task = 'idle'
 
@@ -303,10 +332,10 @@ def main():
                 servos = [2968, 2459, 1676, 969, 3072] #out
                 set_motor_pos(0, 1.0, 250)
                 set_motor_pos(1, 1.0, 150)
-            elif(task_elapsed < 260):
+            elif(task_elapsed < 300):
                 set_motor_pos(0, 1.0, 250)
                 set_motor_pos(1, 1.0, 150)
-            elif(task_elapsed < 300):
+            elif(task_elapsed < 350):
                 set_motor_pos(0, 1.0, 150)
                 set_motor_pos(1, 0.0, 150)
                 servos = [1586, 503, 3523, 2381, 3000] #up
