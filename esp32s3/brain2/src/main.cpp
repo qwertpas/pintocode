@@ -595,7 +595,7 @@ void loop() {
         print_timer = 0;
 
         // Serial.printf("%d\n", sizeof(state));
-        Serial.printf("ton n9 jery \n");
+        Serial.printf("ton n8 jery \n");
 
         // memset(print_buf,0,strlen(print_buf));
 
