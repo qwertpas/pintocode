@@ -152,7 +152,7 @@ void loop() {
     if (Serial.availableForWrite() && print_timer > 10) {
         print_timer = 0;
         memset(serial_tx, 0, sizeof(serial_tx));
-        sprintf(
+        size_t ser_len = sprintf(
             serial_tx,
 
             "station_ok:%d\n"
@@ -170,7 +170,7 @@ void loop() {
             // espnow_rx[1],
             // espnow_rx[2]
         );
-        Serial.write(serial_tx);
+        Serial.write(serial_tx, ser_len);
     }
 
     packet_ready_flag = false;

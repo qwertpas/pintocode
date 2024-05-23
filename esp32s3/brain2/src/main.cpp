@@ -534,11 +534,11 @@ void loop() {
         size_t state_str_size = sprintf(state_str,
             // "motor_power_on:%d\n"
             // "dxl_torque_on:%d\n"
-            // "dxl_pos[0]:%d\n"
-            // "dxl_pos[1]:%d\n"
-            // "dxl_pos[2]:%d\n"
-            // "dxl_pos[3]:%d\n"
-            // "dxl_pos[4]:%d\n"
+            "d0:%d\n"
+            "d1:%d\n"
+            "d2:%d\n"
+            "d3:%d\n"
+            "d4:%d\n"
             // "ntcA:%d\n"
             "p1:%d\n"
             "p2:%d\n"
@@ -553,11 +553,11 @@ void loop() {
             ,
             // state.motor_power_on,
             // state.dxl_torque_on,
-            // state.dxl_pos[0],
-            // state.dxl_pos[1],
-            // state.dxl_pos[2],
-            // state.dxl_pos[3],
-            // state.dxl_pos[4],
+            state.dxl_pos[0],
+            state.dxl_pos[1],
+            state.dxl_pos[2],
+            state.dxl_pos[3],
+            state.dxl_pos[4],
             // state.temp_ntcA,
             // state.temp_ntcB,
             state.sent_cmd_A,

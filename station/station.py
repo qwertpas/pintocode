@@ -457,7 +457,7 @@ def main():
                 task = 'idle'
 
         if(task == 'diagleft'):
-            speed = 1.2
+            speed = 1
             if(task_elapsed < 100/speed):
                 servos = [1800, 1600, 2818, 3010, 3600] #right arm up 
                 set_motor_pos(0, 0.3, 100)
@@ -480,6 +480,18 @@ def main():
                 set_motor_pos(1, 0.1, 100)
             else:
                 task = 'idle'
+            # if(task_elapsed < 200/1.2):
+            #     servos = [942, 491, 2815, 2022, 3072] #left arm out, right arm in
+            #     set_motor_pos(0, 0.3, 100)
+            #     set_motor_pos(1, 0.9, 100)
+            # elif(task_elapsed < 400/1.2):
+            #     set_motor_pos(0, 0.0, 100)
+            #     set_motor_pos(1, 0.0, 100)
+            # else:
+            #     task = 'idle'
+
+
+
 
         # if(task == 'turnright'):
         #     if(task_elapsed < 600):
