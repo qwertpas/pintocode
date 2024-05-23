@@ -594,7 +594,8 @@ void loop() {
     if (print_timer > 10 && Serial.availableForWrite()) {
         print_timer = 0;
 
-        Serial.printf("%d\n", sizeof(state));
+        // Serial.printf("%d\n", sizeof(state));
+        Serial.printf("ton n9 jery \n");
 
         // memset(print_buf,0,strlen(print_buf));
 
