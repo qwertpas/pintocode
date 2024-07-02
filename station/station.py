@@ -12,12 +12,12 @@ import numpy as np
 LOGGING_ON = False
 
 
-
 os.environ['SDL_JOYSTICK_ALLOW_BACKGROUND_EVENTS'] = '1'
 pygame.init()
 screen = pygame.display.set_mode((50, 50))
 
-port = "/dev/cu.usbmodem1101"
+# port = "/dev/cu.usbmodem1101" # for mac
+port = "COM3" # for windows
 ser = None
 # ports = serial.tools.list_ports.comports()
 
@@ -221,17 +221,17 @@ def main():
                 else:
                     task = 'turnright'
             elif(joy_data['dpadup']):
-                # if(joy_data['leftbumper']):
-                #     task = 'longjump'
-                # else:
-                #     task = 'bound'
-                task = 'bound'
+                if(joy_data['leftbumper']):
+                    task = 'longjump'
+                else:
+                    task = 'bound'
+                # task = 'bound'
             elif(joy_data['+']):
                 task = 'boogie'
             elif(joy_data['rightbumper']):
                 task = 'cycle'
             else: #voltage control
-                motor_pwrs[0] = joy_data['lefty']*200
+                motor_pwrs[0] = joy_data['lefty']*300
                 motor_pwrs[1] = joy_data['righty']*200
                 motor_pos[0] = math.copysign(999, joy_data['lefty'])
                 motor_pos[1] = math.copysign(999, joy_data['righty'])
@@ -653,7 +653,7 @@ def recv_from_estop():
 
                 message += uarttext[0:ending]
 
-                print_message(message)
+                # print_message(message)            # Uncomment to print message to terminal
                 messagebuffer = message
                 # print(messagebuffer)
 
