@@ -414,12 +414,17 @@ def main():
                 aux |= (3 << 2)
                 motor_pos[0] = poslib[0]['endstop']
                 motor_pos[1] = poslib[1]['endstop']
-            elif(task_elapsed < 3100):
+            elif(task_elapsed < 2600):
                 aux |= (7 << 2)
                 motor_pwrs[0] = 200
                 motor_pwrs[1] = 200
                 motor_pos[0] = poslib[0]['endstop']
                 motor_pos[1] = poslib[1]['endstop']
+            elif(task_elapsed < 3000):
+                motor_pos[0] = poslib[0]['retract']
+                motor_pwrs[0] = 200
+                motor_pos[1] = poslib[1]['retract']
+                motor_pwrs[1] = 200
             else:
                 task = 'idle'
 
