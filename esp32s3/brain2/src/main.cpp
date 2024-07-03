@@ -593,14 +593,14 @@ void loop() {
             "d3:%d\n"
             "d4:%d\n"
             // "ntcA:%d\n"
-            "p1:%d\n"
-            "p2:%d\n"
-            "m1:%d\n"
-            "m2:%d\n"
             // "ntcB:%d\n"
             "v:%.2f\n"
-            "e1:%d\n"
-            "e2:%d\n"
+            "pA:%d\n"
+            "pB:%d\n"
+            "mA:%d\n"
+            "mB:%d\n"
+            "eA:%d\n"
+            "eB:%d\n"
             "t:%d\n"
             "I:%.2f\n"
             ,
@@ -613,13 +613,13 @@ void loop() {
             state.dxl_pos[4],
             // state.temp_ntcA,
             // state.temp_ntcB,
+            state.vbus,
             state.sent_cmd_A,
             state.sent_cmd_B,
             state.pos_A,
             state.pos_B,
-            state.vbus,
-            state.encposB,
             state.encposA,
+            state.encposB,
             state.elapsed,
             state.cur_tot
         );
