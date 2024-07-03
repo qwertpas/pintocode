@@ -167,22 +167,24 @@ def main():
         recv_from_estop()
 
         poslib = [
-            { #top motor A
-                'extend': -200,
-                'retract': 13,
-                'latch': 42
+            { #top motor A, enc id 2
+                'endstop': 200,
+                'trigger': -13, #FILL IN WITH VALUE JUST BEFORE TRIGGERING
+                'retract': -13,
+                'reset': -42
             },
-            { #bottom motor B
-                'extend': 182,
+            { #bottom motor B, enc id 1
+                'endstop': 182,
+                'trigger': 106, #FILL IN WITH VALUE JUST BEFORE TRIGGERING
                 'retract': 106,
-                'latch': 76
+                'reset': 76
             }
         ]
 
         def set_motor_pos(motor_id, pos_proportion, duty):
             motor_pwrs[motor_id] = duty
             start = poslib[motor_id]['retract']
-            end = poslib[motor_id]['extend']
+            end = poslib[motor_id]['endstop']
             motor_pos[motor_id] = start + pos_proportion*(end-start)
 
         if(task == 'idle'):
@@ -223,6 +225,8 @@ def main():
             elif(joy_data['dpadup']):
                 if(joy_data['leftbumper']):
                     task = 'longjump'
+                elif(joy_data['rightbumper']):
+                    task = 'timedjump'
                 else:
                     task = 'bound'
                 # task = 'bound'
@@ -236,10 +240,10 @@ def main():
                 motor_pos[0] = math.copysign(999, joy_data['lefty'])
                 motor_pos[1] = math.copysign(999, joy_data['righty'])
 
-                endstop0 = (poslib[0]['retract'] if joy_data['lefttrigger']<0.5 else poslib[0]['latch'])
-                endstop1 = (poslib[1]['retract'] if joy_data['lefttrigger']<0.5 else poslib[1]['latch'])
-                motor_pos[0] = clip(math.copysign(999, joy_data['lefty']), poslib[0]['extend'], endstop0)
-                motor_pos[1] = clip(math.copysign(999, -joy_data['righty']), poslib[1]['extend'], endstop1)
+                endstop0 = (poslib[0]['retract'] if joy_data['lefttrigger']<0.5 else poslib[0]['reset'])
+                endstop1 = (poslib[1]['retract'] if joy_data['lefttrigger']<0.5 else poslib[1]['reset'])
+                motor_pos[0] = clip(math.copysign(999, joy_data['lefty']), poslib[0]['endstop'], endstop0)
+                motor_pos[1] = clip(math.copysign(999, -joy_data['righty']), poslib[1]['endstop'], endstop1)
                 # motor_pos[1] = math.copysign(999, joy_data['righty'])
 
 
@@ -259,7 +263,7 @@ def main():
                 [servos[0], servos[1]] = interp(traj_rightarm, elapsed, ['dxl_pos[0]', 'dxl_pos[1]'], speed=speed) #maybe use period as parameter instead
                 [servos[3], servos[2]] = np.array([4095, 4095]) - interp(traj_rightarm, elapsed, ['dxl_pos[0]', 'dxl_pos[1]'], speed=speed, phase_shift=0.5)
                 servos[4] = 3072
-                # motor_pos[1] = poslib[1]['extend']
+                # motor_pos[1] = poslib[1]['endstop']
                 # motor_pwrs[1] = 150
             if(task_elapsed < 200):
                 [servos[0], servos[1]] = interp(traj_rightarm, elapsed, ['dxl_pos[0]', 'dxl_pos[1]'], speed=speed) #maybe use period as parameter instead
@@ -293,19 +297,19 @@ def main():
 
         # if(task == 'bound'):
         #     if(task_elapsed < 30):
-        #         # motor_pos[0] = poslib[0]['extend']
+        #         # motor_pos[0] = poslib[0]['endstop']
         #         # motor_pwrs[0] = 0
         #         servos = [1586, 503, 3523, 2381, 2471] #up
         #         # servos = [2742, 2053, 1987, 990, 3072] #out
-        #         # motor_pos[1] = poslib[1]['extend']
+        #         # motor_pos[1] = poslib[1]['endstop']
         #         # motor_pwrs[1] = 100
 
         #     elif(task_elapsed < 80):
         #         servos = [2742, 2053, 1987, 990, 3072] #out
         #     elif(task_elapsed < 260):
-        #         motor_pos[0] = poslib[0]['extend']
+        #         motor_pos[0] = poslib[0]['endstop']
         #         motor_pwrs[0] = 150
-        #         motor_pos[1] = poslib[1]['extend']
+        #         motor_pos[1] = poslib[1]['endstop']
         #         motor_pwrs[1] = 150
         #         # servos = [1915, 1644, 2480, 2208, 2471]
         #     elif(task_elapsed < 500):
@@ -383,9 +387,9 @@ def main():
             elif(task_elapsed < 80):
                 servos = [2742, 2053, 1987, 990, 3072] #out
             elif(task_elapsed < 300):
-                motor_pos[0] = poslib[0]['extend']
+                motor_pos[0] = poslib[0]['endstop']
                 motor_pwrs[0] = power
-                motor_pos[1] = poslib[1]['extend']
+                motor_pos[1] = poslib[1]['endstop']
                 motor_pwrs[1] = power
             elif(task_elapsed < 550):
                 motor_pos[0] = poslib[0]['retract']
@@ -397,6 +401,25 @@ def main():
                 servos = [1012, 1216, 2815, 3008, 3900] #home retracted
                 for stick in joysticks.values():
                     stick.rumble(0.7, 0.0, 100)
+            else:
+                task = 'idle'
+
+        if(task == 'timedjump'):
+            aux &= 0b00011 #clear upper 3 bits
+            if(task_elapsed < 50):
+                aux |= (2 << 2)
+                motor_pos[0] = poslib[0]['trigger']
+                motor_pos[1] = poslib[1]['trigger']
+            elif(task_elapsed < 100):
+                aux |= (3 << 2)
+                motor_pos[0] = poslib[0]['endstop']
+                motor_pos[1] = poslib[1]['endstop']
+            elif(task_elapsed < 3100):
+                aux |= (7 << 2)
+                motor_pwrs[0] = 200
+                motor_pwrs[1] = 200
+                motor_pos[0] = poslib[0]['endstop']
+                motor_pos[1] = poslib[1]['endstop']
             else:
                 task = 'idle'
 
@@ -557,14 +580,14 @@ def main():
                 motor_pwrs[i] = 0
                 
 
-        aux = 0
+        aux &= 0b11100
         if(joy_data['circle']):
             if(joy_data['-']): #circle and - to reset low voltage
                 low_battery = False
             elif(joy_data['home']): #circle and home
                 aux |= (1 << 0) #set bit 0 for toggle motor power
             else: #just circle
-                aux |= (1 << 1) #set bit 1 for enable servo torque
+                aux |= (1 << 1) #set bit 1 for enable servo torque and unwind encoders
 
 
         
