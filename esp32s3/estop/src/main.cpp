@@ -13,12 +13,13 @@ typedef struct __attribute__((packed)) {
     char serialData[64]; // Change the size according to your data needs
 } MyData;
 
-uint8_t WHICH_ADDR = 3; //<-- multiple receivers makes it unclear whether transmit succeeds, pick one address
+uint8_t WHICH_ADDR = 4; //<-- multiple receivers makes it unclear whether transmit succeeds, pick one address
 uint8_t send_to_addrs[][6] = {
     {0xC8, 0xC9, 0xA3, 0x56, 0x98, 0x6F}, // jank brain (esp8266)
     {0x30, 0x30, 0xF9, 0x34, 0x57, 0x28}, // squirrelbrain_v1 1 (esp32s3) (Recom 2A)
     {0x30, 0x30, 0xF9, 0x34, 0x5A, 0x44}, // squirrelbrain_v1 2 (esp32s3)
     {0x30, 0x30, 0xF9, 0x33, 0xDE, 0x4C}, // squirrelbrain_v2 3 (esp32s3) (Recom 6A)
+    {0x74, 0x4D, 0xBD, 0x81, 0x09, 0x50}, // new
     // use FF,FF,... to broadcast all
 };
 

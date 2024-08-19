@@ -148,7 +148,7 @@ def main():
     if(LOGGING_ON):
         current_time = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         global file
-        file = open(f"./data/{current_time}.txt", "a")
+        file = open(f"./data/Summer/{current_time}.txt", "a")
 
     start_time = timer()
     while not done:
@@ -168,16 +168,16 @@ def main():
 
         poslib = [
             { #top motor A, enc id 2
-                'endstop': 200,
-                'trigger': -13, #FILL IN WITH VALUE JUST BEFORE TRIGGERING
-                'retract': -13,
-                'reset': -42
+                'endstop': 125,
+                'trigger': 99, #FILL IN WITH VALUE JUST BEFORE TRIGGERING
+                'retract': -104,
+                'reset': -135
             },
             { #bottom motor B, enc id 1
-                'endstop': 182,
-                'trigger': 106, #FILL IN WITH VALUE JUST BEFORE TRIGGERING
-                'retract': 106,
-                'reset': 76
+                'endstop': 180,
+                'trigger': 168, #FILL IN WITH VALUE JUST BEFORE TRIGGERING
+                'retract': 105,
+                'reset': 80
             }
         ]
 
@@ -225,7 +225,7 @@ def main():
             elif(joy_data['dpadup']):
                 if(joy_data['leftbumper']):
                     task = 'longjump'
-                elif(joy_data['rightbumper']):
+                elif(joy_data['righttrigger']>0.5): # timed jump
                     task = 'timedjump'
                 else:
                     task = 'bound'
@@ -279,8 +279,6 @@ def main():
             power = 200
             t = (task_elapsed%period)/period 
             if(task_elapsed < period*1):
-                
-
                 set_motor_pos(0, (1-t)*0.5 + 0.99*t, power)
                 set_motor_pos(1, 1, power)
             elif(task_elapsed < period*2):
@@ -331,14 +329,14 @@ def main():
                 # servos = [1553, 970, 3172, 2487, 3300] #more up
                 servos = [1553, 770, 3372, 2487, 3800] #more more up
                 set_motor_pos(0, 1.0, 100)
-                set_motor_pos(1, 0.1, 100)
+                set_motor_pos(1, 0.0, 100)
             elif(task_elapsed < 200):
                 servos = [2968, 2459, 1676, 969, 3072] #out
                 set_motor_pos(0, 1.0, 250)
-                set_motor_pos(1, 1.0, 150)
+                set_motor_pos(1, 0.1, 150)
             elif(task_elapsed < 300):
                 set_motor_pos(0, 1.0, 250)
-                set_motor_pos(1, 1.0, 150)
+                set_motor_pos(1, 0.1, 150)
             elif(task_elapsed < 350):
                 set_motor_pos(0, 1.0, 150)
                 set_motor_pos(1, 0.0, 150)
@@ -384,13 +382,17 @@ def main():
             power = 350
             if(task_elapsed < 30):
                 servos = [1586, 503, 3523, 2381, 3900] #up
-            elif(task_elapsed < 80):
-                servos = [2742, 2053, 1987, 990, 3072] #out
+                if (task_elapsed > 15):
+                    motor_pos[0] = poslib[0]['endstop']
+                    motor_pwrs[0] = power
+            # elif(task_elapsed < 110):
+            #     servos = [2742, 2053, 1987, 990, 3072] #out
             elif(task_elapsed < 300):
                 motor_pos[0] = poslib[0]['endstop']
                 motor_pwrs[0] = power
-                motor_pos[1] = poslib[1]['endstop']
-                motor_pwrs[1] = power
+                if (task_elapsed > 100):
+                    motor_pos[1] = poslib[1]['endstop']
+                    motor_pwrs[1] = power
             elif(task_elapsed < 550):
                 motor_pos[0] = poslib[0]['retract']
                 motor_pwrs[0] = power
@@ -416,8 +418,8 @@ def main():
                 motor_pos[1] = poslib[1]['endstop']
             elif(task_elapsed < 2600):
                 aux |= (7 << 2)
-                motor_pwrs[0] = 200
-                motor_pwrs[1] = 200
+                motor_pwrs[0] = 300
+                motor_pwrs[1] = 300
                 motor_pos[0] = poslib[0]['endstop']
                 motor_pos[1] = poslib[1]['endstop']
             elif(task_elapsed < 3000):
@@ -575,7 +577,7 @@ def main():
 
         
 
-        low_battery_threshold = 10.5
+        low_battery_threshold = 10
         if((task=='idle' and elapsed > 1000 and telemetry['v'] > 0 and telemetry['v'] < low_battery_threshold) or low_battery):
             print("LOW BATTERY")
             low_battery = True
@@ -671,7 +673,7 @@ def recv_from_estop():
             # print(len(hexes))
             # teledict = decode_state_struct(hexes)
             # print_message(teledict)
-            uarttext = ser.read_all().decode('utf-8', errors='ignore')            
+            uarttext = ser.read_all().decode('utf-8', errors='ignore')
             
             ending=0
             while(uarttext):
@@ -681,7 +683,11 @@ def recv_from_estop():
 
                 message += uarttext[0:ending]
 
-                # print_message(message)            # Uncomment to print message to terminal
+                print_message(message)            # Uncomment to print message to terminal
+                print_message(message)            # Uncomment to print message to terminal
+                print_message(message)            # Uncomment to print message to terminal
+                print_message(message)            # Uncomment to print message to terminal
+
                 messagebuffer = message
                 # print(messagebuffer)
 
