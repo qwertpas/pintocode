@@ -153,6 +153,7 @@ def main():
     start_time = timer()
     while not done:
         elapsed = (timer() - start_time) * 1000 #milliseconds
+        # print(elapsed)
         task_elapsed = elapsed - task_starttime
 
         while(ser is None):
@@ -649,6 +650,7 @@ def send_to_estop():
 
     try:
         ser.write(cmd_str.encode())
+        # print(time.time())
     except Exception as e:
         print(e)
         ser = None
@@ -683,10 +685,10 @@ def recv_from_estop():
 
                 message += uarttext[0:ending]
 
-                print_message(message)            # Uncomment to print message to terminal
-                print_message(message)            # Uncomment to print message to terminal
-                print_message(message)            # Uncomment to print message to terminal
-                print_message(message)            # Uncomment to print message to terminal
+                # print_message(message)            # Uncomment to print message to terminal
+                # print_message(message)            # Uncomment to print message to terminal
+                # print_message(message)            # Uncomment to print message to terminal
+
 
                 messagebuffer = message
                 # print(messagebuffer)
