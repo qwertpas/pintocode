@@ -16,8 +16,8 @@ os.environ['SDL_JOYSTICK_ALLOW_BACKGROUND_EVENTS'] = '1'
 pygame.init()
 screen = pygame.display.set_mode((50, 50))
 
-# port = "/dev/cu.usbmodem1101" # for mac
-port = "COM3" # for windows
+port = "/dev/cu.usbmodem1101" # for mac
+# port = "COM3" # for windows
 ser = None
 # ports = serial.tools.list_ports.comports()
 
@@ -168,14 +168,14 @@ def main():
 
         poslib = [
             { #top motor A, enc id 2
-                'endstop': 125,
-                'trigger': 99, #FILL IN WITH VALUE JUST BEFORE TRIGGERING
-                'retract': -104,
-                'reset': -135
+                'endstop': 124,
+                'trigger': 0, #FILL IN WITH VALUE JUST BEFORE TRIGGERING
+                'retract': -80,
+                'reset': -80
             },
             { #bottom motor B, enc id 1
                 'endstop': 180,
-                'trigger': 168, #FILL IN WITH VALUE JUST BEFORE TRIGGERING
+                'trigger': 0, #FILL IN WITH VALUE JUST BEFORE TRIGGERING
                 'retract': 105,
                 'reset': 80
             }
@@ -577,7 +577,7 @@ def main():
 
         
 
-        low_battery_threshold = 10
+        low_battery_threshold = 8
         if((task=='idle' and elapsed > 1000 and telemetry['v'] > 0 and telemetry['v'] < low_battery_threshold) or low_battery):
             print("LOW BATTERY")
             low_battery = True

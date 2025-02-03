@@ -364,6 +364,22 @@ void loop() {
                 set_dxl_torque_on();
             }
             break;
+        case 'd':
+        {
+            char which_servo = Serial.read();
+            int receivedInt = Serial.parseInt(); // Read the incoming integer
+            if(which_servo == 'a')
+                cmd.servos[0] = clip(receivedInt, 0, 4095);
+            else if(which_servo = 'b')
+                cmd.servos[1] = clip(receivedInt, 0, 4095);
+            else if(which_servo = 'c')
+                cmd.servos[2] = clip(receivedInt, 0, 4095);
+            else if(which_servo = 'd')
+                cmd.servos[3] = clip(receivedInt, 0, 4095);
+            else if(which_servo = 'e')
+                cmd.servos[4] = clip(receivedInt, 0, 4095);
+            break;
+        }
         case 'm':
         {
             char which_motor = Serial.read();
