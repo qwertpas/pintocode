@@ -168,16 +168,16 @@ def main():
 
         poslib = [
             { #top motor A, enc id 2
-                'endstop': 124,
+                'endstop': 320,
                 'trigger': 0, #FILL IN WITH VALUE JUST BEFORE TRIGGERING
-                'retract': -80,
-                'reset': -80
+                'retract': 85,
+                'reset': 60
             },
             { #bottom motor B, enc id 1
-                'endstop': 180,
+                'endstop': 171,
                 'trigger': 0, #FILL IN WITH VALUE JUST BEFORE TRIGGERING
-                'retract': 105,
-                'reset': 80
+                'retract': 91,
+                'reset': 74
             }
         ]
 
@@ -333,10 +333,10 @@ def main():
             elif(task_elapsed < 200):
                 servos = [2968, 2459, 1676, 969, 3072] #out
                 set_motor_pos(0, 1.0, 250)
-                set_motor_pos(1, 0.1, 150)
+                set_motor_pos(1, 0.8, 150)
             elif(task_elapsed < 300):
                 set_motor_pos(0, 1.0, 250)
-                set_motor_pos(1, 0.1, 150)
+                set_motor_pos(1, 0.8, 150)
             elif(task_elapsed < 350):
                 set_motor_pos(0, 1.0, 150)
                 set_motor_pos(1, 0.0, 150)
