@@ -170,7 +170,7 @@ def main():
             { #top motor A, enc id 2
                 'endstop': 320,
                 'trigger': 0, #FILL IN WITH VALUE JUST BEFORE TRIGGERING
-                'retract': 85,
+                'retract': 121,
                 'reset': 60
             },
             { #bottom motor B, enc id 1
